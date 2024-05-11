@@ -4,7 +4,7 @@
 
 ## 一键脚本
 ```bash
-bash <(curl -Ls https://gitlab.com/passeway/sing-box/raw/main/sing-box.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/passeway/sing-box/main/sing-box.sh)
 ```
 ## 安装
 下载sing-box
