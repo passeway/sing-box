@@ -5,8 +5,16 @@
 ## 一键脚本
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/passeway/sing-box/main/sing-box.sh)
+
+## 终端预览
+
+![preview](预览.png)
+
+## 一键脚本
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/main/sing-box.sh)
 ```
-## 安装
+## 安装 sing-box
 下载sing-box
 ```
 bash <(curl -fsSL https://sing-box.app/deb-install.sh)
@@ -24,28 +32,50 @@ nano /etc/sing-box/config.json
   },
   "inbounds": [
     {
-      "type": "naive",
-      "tag": "naive-in",
+      "type": "hysteria2",
       "listen": "::",
       "listen_port": 443,
-      "tcp_fast_open": true,
       "users": [
-        {
-          "username": "your_username",
-          "password": "your_password"
-        }
+          {
+              "password": "your_password" 
+          }
+      ],
+      "masquerade": "https://bing.com",
+      "tls": {
+          "enabled": true,
+          "alpn": [
+              "h3"
+          ],
+          "certificate_path": "/etc/sing-box/cert.pem",
+          "key_path": "/etc/sing-box/private.key"
+      }
+    },
+    {
+      "type": "vless",
+      "listen": "::",
+      "listen_port": 443,
+      "users": [
+          {
+              "uuid": "sing-box generate uuid",
+              "flow": "xtls-rprx-vision"
+          }
       ],
       "tls": {
-        "enabled": true,
-        "server_name": "example.com",
-        "acme": {
-          "domain": ["example.com"],
-          "data_directory": "/usr/local/etc/sing-box",
-          "email": "admin@gmail.com",
-          "provider": "letsencrypt"
-        }
+          "enabled": true,
+          "server_name": "www.tesla.com", 
+          "reality": {
+              "enabled": true,
+              "handshake": {
+                  "server": "www.tesla.com", 
+                  "server_port": 443
+              },
+              "private_key": "sing-box generate reality-keypair", 
+              "short_id": [
+                  "123abc"
+                ]
+              }
+          }
       }
-    }
   ],
   "outbounds": [
     {
@@ -91,32 +121,26 @@ systemctl status sing-box
 ```
 cat /var/log/singbox.log
 ```
-```
-journalctl -u sing-box -o cat -f
-```
-查看sing-box证书
-```
-ls /usr/local/etc/sing-box/certificates/acme-v02.api.letsencrypt.org-directory/
-```
 
 
-## 卸载
+## 卸载 sing-box
 禁用sing-box
 ```
-sudo systemctl stop sing-box
-sudo systemctl disable sing-box
+systemctl stop sing-box.service
+systemctl disable sing-box.service
 ```
 卸载sing-box
 ```
-sudo apt-get remove --purge sing-box -y
+dpkg --purge sing-box
 ```
 删除sing-box
 ```
-sudo rm -rf /etc/sing-box
-sudo rm -f /var/log/singbox.log
-sudo rm -rf /usr/local/etc/sing-box
+rm -rf /etc/sing-box
+rm -f /var/log/singbox.log
 ```
 重载systemd
 ```
-sudo systemctl daemon-reload
+systemctl daemon-reload
 ```
+
+## 项目地址：https://github.com/SagerNet/sing-box
