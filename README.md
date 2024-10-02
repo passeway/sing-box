@@ -1,11 +1,3 @@
-## 预览
-
-![preview](预览.png)
-
-## 一键脚本
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/passeway/sing-box/main/sing-box.sh)
-
 ## 终端预览
 
 ![preview](预览.png)
