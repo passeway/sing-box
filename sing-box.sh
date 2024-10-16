@@ -52,7 +52,11 @@ install_sing_box() {
     # 生成随机端口和密码
     hport=$(shuf -i 1025-65535 -n 1)
     vport=$(shuf -i 1025-65535 -n 1)
+    sport=$(shuf -i 1025-65535 -n 1)
+    ssport=$(shuf -i 1025-65535 -n 1)
+    ss_password=$(sing-box generate rand 16 --base64)
     password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12)
+
 
     # 生成 UUID 和 Reality 密钥对
     uuid=$(sing-box generate uuid)
@@ -130,6 +134,34 @@ install_sing_box() {
           ]
         }
       }
+    },
+    {
+      "type": "shadowtls",
+      "listen": "::",
+      "listen_port": ${sport},
+      "detour": "shadowsocks-in",
+      "version": 3,
+      "users": [
+        {
+          "password": "${password}"
+        }
+      ],
+      "handshake": {
+        "server": "www.bing.com",
+        "server_port": 443
+      },
+      "strict_mode": true
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "shadowsocks-in",
+      "listen": "127.0.0.1",
+      "listen_port": ${ssport},
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "${ss_password}",
+      "multiplex": {
+        "enabled": true
+      }
     }
   ],
   "outbounds": [
@@ -192,6 +224,8 @@ EOF
         echo
         echo "${ip_country} = hysteria2, ${host_ip}, ${hport}, password = ${password}, skip-cert-verify=true, sni=www.bing.com"
         echo
+        echo "${ip_country} = ss, ${host_ip}, ${sport}, encrypt-method=2022-blake3-aes-128-gcm, password=${ss_password}, shadow-tls-password=${password}, shadow-tls-sni=www.bing.com, shadow-tls-version=3, udp-relay=true"
+        echo 
         echo "vless://${uuid}@${host_ip}:${vport}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.tesla.com&fp=chrome&pbk=${public_key}&sid=123abc&type=tcp&headerType=none#${ip_country}"
         echo
     } > "${CLIENT_CONFIG_FILE}"
