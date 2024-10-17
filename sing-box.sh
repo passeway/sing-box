@@ -217,6 +217,13 @@ install_sing_box() {
   "route": {
     "rule_set": [
       {
+        "tag": "geosite-disney",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-disney.srs",
+        "download_detour": "direct"
+      },
+      {
         "tag": "geosite-openai",
         "type": "remote",
         "format": "binary",
@@ -234,7 +241,7 @@ install_sing_box() {
     "rules": [
       {
         "outbound": "wireguard-out",
-        "rule_set": ["geosite-openai", "geosite-netflix"]
+        "rule_set": ["geosite-disney", "geosite-openai", "geosite-netflix"]
       },
       {
         "outbound": "direct",
