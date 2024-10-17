@@ -39,6 +39,34 @@ is_sing_box_running() {
     return $?
 }
 
+# 根据系统架构自动判定 warp-reg 下载链接
+get_warp_reg() {
+    arch=$(uname -m)
+    if [[ "$arch" == "x86_64" ]]; then
+        download_url="https://github.com/badafans/warp-reg/releases/download/v1.0/main-linux-amd64"
+    elif [[ "$arch" == "aarch64" ]]; then
+        download_url="https://github.com/badafans/warp-reg/releases/download/v1.0/main-linux-arm64"
+    elif [[ "$arch" == "armv7l" ]]; then
+        download_url="https://github.com/badafans/warp-reg/releases/download/v1.0/main-linux-arm"
+    else
+        echo -e "${RED}不支持的系统架构: $arch${RESET}"
+        exit 1
+    fi
+
+    # 下载并执行 warp-reg
+    output=$(curl -sLo warp-reg "$download_url" && chmod +x warp-reg && ./warp-reg && rm warp-reg)
+
+    # 使用 grep 提取需要的字段
+    wprivate_key=$(echo "$output" | grep -oP '(?<=private_key: ).*')
+    v6=$(echo "$output" | grep -oP '(?<=v6: ).*')
+    reserved=$(echo "$output" | grep -oP '(?<=reserved: \[ ).*(?= \])')
+
+    # 输出提取的信息
+    echo -e "${GREEN}Reserved: $reserved${RESET}"
+    echo -e "${GREEN}IPv6: $v6${RESET}"
+    echo -e "${GREEN}Private Key: $wprivate_key${RESET}"
+}
+
 # 安装 sing-box
 install_sing_box() {
     echo -e "${CYAN}正在安装 sing-box${RESET}"
@@ -57,12 +85,14 @@ install_sing_box() {
     ss_password=$(sing-box generate rand 16 --base64)
     password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12)
 
-
     # 生成 UUID 和 Reality 密钥对
     uuid=$(sing-box generate uuid)
     reality_output=$(sing-box generate reality-keypair)
     private_key=$(echo "${reality_output}" | grep -oP 'PrivateKey:\s*\K.*')
     public_key=$(echo "${reality_output}" | grep -oP 'PublicKey:\s*\K.*')
+
+    # 获取 warp 注册信息
+    get_warp_reg
 
     # 生成自签名证书
     mkdir -p "${CONFIG_DIR}"
@@ -167,9 +197,51 @@ install_sing_box() {
   "outbounds": [
     {
       "type": "direct",
-      "tag": "direct-out"
+      "tag": "direct"
+    },
+    {
+      "type": "wireguard",
+      "tag": "wireguard-out",
+      "server": "engage.cloudflareclient.com",
+      "server_port": 2408,
+      "local_address": [
+        "172.16.0.2/32",
+        "${v6}/128"
+      ],
+      "private_key": "${wprivate_key}",
+      "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
+      "reserved": [${reserved}],
+      "mtu": 1280
     }
-  ]
+  ],
+  "route": {
+    "rule_set": [
+      {
+        "tag": "geosite-openai",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
+        "download_detour": "direct"
+      },
+      {
+        "tag": "geosite-netflix",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-netflix.srs",
+        "download_detour": "direct"
+      }
+    ],
+    "rules": [
+      {
+        "outbound": "wireguard-out",
+        "rule_set": ["geosite-openai", "geosite-netflix"]
+      },
+      {
+        "outbound": "direct",
+        "network": ["udp", "tcp"]
+      }
+    ]
+  }
 }
 EOF
 
