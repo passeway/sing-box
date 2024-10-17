@@ -1,20 +1,23 @@
 #!/bin/bash
 
-# 获取 JSON 输出
-output=$(bash -c "$(curl -L warp-reg.vercel.app)")
+# 运行 warp-reg 并提取输出
+output=$(curl -sLo warp-reg https://github.com/badafans/warp-reg/releases/download/v1.0/main-linux-arm64 && chmod +x warp-reg && ./warp-reg && rm warp-reg)
 
-# 打印输出检查
-echo "Raw output:"
-echo "$output"
+# 使用 jq 提取需要的字段
+device_id=$(echo "$output" | grep -oP '(?<=device_id: ).*')
+token=$(echo "$output" | grep -oP '(?<=token: ).*')
+account_id=$(echo "$output" | grep -oP '(?<=account_id: ).*')
+license=$(echo "$output" | grep -oP '(?<=license: ).*')
+private_key=$(echo "$output" | grep -oP '(?<=private_key: ).*')
+public_key=$(echo "$output" | grep -oP '(?<=public_key: ).*')
+v4=$(echo "$output" | grep -oP '(?<=v4: ).*')
+v6=$(echo "$output" | grep -oP '(?<=v6: ).*')
 
-# 解析 JSON
-v4=$(echo "$output" | jq -r '.endpoint.v4')
-reserved=$(echo "$output" | jq -r '.reserved_dec | @csv')
-private_key=$(echo "$output" | jq -r '.private_key')
-v6=$(echo "$output" | jq -r '.v6')
-
-# 输出解析后的结果
-echo "v4: $v4"
-echo "reserved: $reserved"
-echo "private_key: $private_key"
-echo "v6: $v6"
+# 输出提取的变量
+echo "Device ID: $device_id"
+echo "Token: $token"
+echo "Account ID: $account_id"
+echo "License: $license"
+echo "Private Key: $private_key"
+echo "Public Key: $public_key"
+echo "IPv6: $v6"
