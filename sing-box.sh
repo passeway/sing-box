@@ -82,7 +82,7 @@ install_sing_box() {
 
 
     # 获取 wireguard 变量
-    bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh)
+    eval $(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh))
 
     # 生成配置文件
     cat > "${CONFIG_FILE}" << EOF
