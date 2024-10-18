@@ -82,7 +82,10 @@ install_sing_box() {
 
 
     # 获取 wireguard 变量
-    eval $(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh))
+    WARP_IPV4=$(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh) | grep WARP_IPV4 | cut -d= -f2)
+    WARP_IPV6=$(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh) | grep WARP_IPV6 | cut -d= -f2)
+    WARP_Reserved=$(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh) | grep WARP_Reserved | cut -d= -f2)
+    WARP_private=$(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh) | grep WARP_private | cut -d= -f2)
 
     # 生成配置文件
     cat > "${CONFIG_FILE}" << EOF
