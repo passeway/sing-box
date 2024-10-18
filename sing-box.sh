@@ -81,11 +81,22 @@ install_sing_box() {
     ip_country=$(curl -s http://ipinfo.io/${host_ip}/country)
 
 
-    # 获取 wireguard 变量
-    WARP_IPV4=$(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh) | grep WARP_IPV4 | cut -d= -f2)
-    WARP_IPV6=$(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh) | grep WARP_IPV6 | cut -d= -f2)
-    WARP_Reserved=$(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh) | grep WARP_Reserved | cut -d= -f2)
-    WARP_private=$(bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh) | grep WARP_private | cut -d= -f2)
+    # 下载并执行脚本，将输出导入当前shell环境
+    eval "$(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh)"
+    
+    # 提取变量
+    WARP_IPV4=$(echo "$WARP_IPV4")
+    WARP_IPV6=$(echo "$WARP_IPV6")
+    WARP_Reserved=$(echo "$WARP_Reserved")
+    WARP_private=$(echo "$WARP_private")
+
+    # 输出结果
+    echo "WARP_IPV4=${WARP_IPV4}"
+    echo "WARP_IPV6=${WARP_IPV6}"
+    echo "WARP_Reserved=${WARP_Reserved}"
+    echo "WARP_private=${WARP_private}"
+
+
 
     # 生成配置文件
     cat > "${CONFIG_FILE}" << EOF
