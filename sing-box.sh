@@ -90,13 +90,6 @@ install_sing_box() {
     WARP_Reserved=$(echo "$WARP_Reserved")
     WARP_private=$(echo "$WARP_private")
 
-    # 输出结果
-    echo "WARP_IPV4=${WARP_IPV4}"
-    echo "WARP_IPV6=${WARP_IPV6}"
-    echo "WARP_Reserved=${WARP_Reserved}"
-    echo "WARP_private=${WARP_private}"
-
-
 
     # 生成配置文件
     cat > "${CONFIG_FILE}" << EOF
