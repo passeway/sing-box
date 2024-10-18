@@ -297,7 +297,7 @@ EOF
 
 # 卸载 sing-box
 uninstall_sing_box() {
-    read -p "$(echo -e "${RED}确定要卸载 sing-box 吗? (Y/n) ${RESET}")" choice
+    read -p "$(echo -e "${RED}确定要卸载 sing-box 吗? (y/n) ${RESET}")" choice
     case "${choice}" in
         y|Y)
             echo -e "${CYAN}正在卸载 sing-box${RESET}"
