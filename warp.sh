@@ -23,15 +23,16 @@ get_warp_reg() {
     output=$(curl -sLo warp-reg "$download_url" && chmod +x warp-reg && ./warp-reg && rm warp-reg)
 
     # 使用 grep 提取需要的字段
-    wprivate_key=$(echo "$output" | grep -oP '(?<=private_key: ).*')
-    v6=$(echo "$output" | grep -oP '(?<=v6: ).*')
-    reserved=$(echo "$output" | grep -oP '(?<=reserved: \[ ).*(?= \])')
+    WARP_private=$(echo "$output" | grep -oP '(?<=private_key: ).*')
+    WARP_IPV6=$(echo "$output" | grep -oP '(?<=v6: ).*')
+    WARP_Reserved=$(echo "$output" | grep -oP '(?<=reserved: \[ ).*(?= \])')
 
     # 输出提取的信息
-    echo -e "${GREEN}Reserved: $reserved${RESET}"
-    echo -e "${GREEN}IPv6: $v6${RESET}"
-    echo -e "${GREEN}Private Key: $wprivate_key${RESET}"
+    echo -e "${GREEN}WARP_Reserved: $WARP_Reserved${RESET}"
+    echo -e "${GREEN}WARP_IPV6: $WARP_IPV6${RESET}"
+    echo -e "${GREEN}WARP_private: $WARP_private${RESET}"
 }
+
 
 # 主程序
 main() {
