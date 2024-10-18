@@ -82,7 +82,7 @@ install_sing_box() {
 
 
     # 下载并执行脚本，将输出导入当前shell环境
-    eval "$(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_setup.sh)"
+    eval "$(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/main/wireguard.sh)"
     
     # 提取变量
     WARP_IPV4=$(echo "$WARP_IPV4")
