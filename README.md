@@ -4,7 +4,7 @@
 
 ## 一键脚本
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/main/sing-box.sh)
+bash <(curl -fsSL sing-box-teal.vercel.app)
 ```
 ## 安装 sing-box
 下载sing-box
