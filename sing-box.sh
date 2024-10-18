@@ -39,33 +39,6 @@ is_sing_box_running() {
     return $?
 }
 
-# 根据系统架构自动判定 warp-reg 下载链接
-get_warp_reg() {
-    arch=$(uname -m)
-    if [[ "$arch" == "x86_64" ]]; then
-        download_url="https://github.com/badafans/warp-reg/releases/download/v1.0/main-linux-amd64"
-    elif [[ "$arch" == "aarch64" ]]; then
-        download_url="https://github.com/badafans/warp-reg/releases/download/v1.0/main-linux-arm64"
-    elif [[ "$arch" == "armv7l" ]]; then
-        download_url="https://github.com/badafans/warp-reg/releases/download/v1.0/main-linux-arm"
-    else
-        echo -e "${RED}不支持的系统架构: $arch${RESET}"
-        exit 1
-    fi
-
-    # 下载并执行 warp-reg
-    output=$(curl -sLo warp-reg "$download_url" && chmod +x warp-reg && ./warp-reg && rm warp-reg)
-
-    # 使用 grep 提取需要的字段
-    wprivate_key=$(echo "$output" | grep -oP '(?<=private_key: ).*')
-    v6=$(echo "$output" | grep -oP '(?<=v6: ).*')
-    reserved=$(echo "$output" | grep -oP '(?<=reserved: \[ ).*(?= \])')
-
-    # 输出提取的信息
-    echo -e "${GREEN}Reserved: $reserved${RESET}"
-    echo -e "${GREEN}IPv6: $v6${RESET}"
-    echo -e "${GREEN}Private Key: $wprivate_key${RESET}"
-}
 
 # 安装 sing-box
 install_sing_box() {
@@ -91,8 +64,6 @@ install_sing_box() {
     private_key=$(echo "${reality_output}" | grep -oP 'PrivateKey:\s*\K.*')
     public_key=$(echo "${reality_output}" | grep -oP 'PublicKey:\s*\K.*')
 
-    # 获取 warp 注册信息
-    get_warp_reg
 
     # 生成自签名证书
     mkdir -p "${CONFIG_DIR}"
@@ -108,6 +79,10 @@ install_sing_box() {
     # 获取本机 IP 地址和所在国家
     host_ip=$(curl -s http://checkip.amazonaws.com)
     ip_country=$(curl -s http://ipinfo.io/${host_ip}/country)
+
+
+    # 获取 wireguard 变量
+    bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/refs/heads/main/warp_reg.sh)
 
     # 生成配置文件
     cat > "${CONFIG_FILE}" << EOF
@@ -202,15 +177,15 @@ install_sing_box() {
     {
       "type": "wireguard",
       "tag": "wireguard-out",
-      "server": "engage.cloudflareclient.com",
+      "server": "${WARP_IPV4}",
       "server_port": 2408,
       "local_address": [
         "172.16.0.2/32",
-        "${v6}/128"
+        "${WARP_IPV6}/128"
       ],
-      "private_key": "${wprivate_key}",
+      "private_key": "${WARP_private}",
       "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-      "reserved": [${reserved}],
+      "reserved": [${WARP_Reserved}],
       "mtu": 1280
     }
   ],
