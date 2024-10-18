@@ -80,8 +80,8 @@ format() {
     config+="$(echo "$warp_info" | grep -P "(private_key|public_key|\"v4\": \"172.16.0.2\"|\"v6\": \"2)" | sed "s/ //g" | sed 's/:"/: "/g' | sed 's/^"/    "/g')"
     config+=$'\n}'
     
-    # 输出完整配置
-    echo "$config"
+    # 输出完整配置echo "$config"
+   
     
     # 提取并设置环境变量
     export WARP_IPV4=$(echo "$config" | grep -oP '"v4": "\K[0-9.]+(?=")' | head -1)
@@ -90,7 +90,6 @@ format() {
     export WARP_private=$(echo "$config" | grep -oP '"private_key": "\K[^"]+')
     
     # 输出环境变量设置信息
-    echo -e "\n环境变量已设置："
     echo "WARP_IPV4=$WARP_IPV4"
     echo "WARP_IPV6=$WARP_IPV6"
     echo "WARP_Reserved=$WARP_Reserved"
