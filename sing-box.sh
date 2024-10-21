@@ -95,7 +95,7 @@ install_sing_box() {
     cat > "${CONFIG_FILE}" << EOF
 {
   "log": {
-    "level": "info",
+    "level": "debug",
     "timestamp": true,
     "output": "${LOG_FILE}"
   },
