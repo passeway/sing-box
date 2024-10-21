@@ -87,8 +87,8 @@ install_sing_box() {
     # 提取变量
     WARP_IPV4=$(echo "$WARP_IPV4")
     WARP_IPV6=$(echo "$WARP_IPV6")
-    WARP_Reserved=$(echo "$WARP_Reserved")
     WARP_private=$(echo "$WARP_private")
+    WARP_Reserved=$(echo "$WARP_Reserved")
 
 
     # 生成配置文件
