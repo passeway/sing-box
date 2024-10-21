@@ -120,8 +120,8 @@ format() {
     # 显示环境变量
     echo "WARP_IPV4=$WARP_IPV4"
     echo "WARP_IPV6=$WARP_IPV6"
-    echo "WARP_Reserved=$WARP_Reserved"
     echo "WARP_private=$WARP_private"
+    echo "WARP_Reserved=$WARP_Reserved"
 }
 
 # 主函数：执行脚本的主要流程
