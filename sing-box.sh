@@ -193,7 +193,12 @@ install_sing_box() {
       "private_key": "${WARP_private}",
       "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
       "reserved": [${WARP_Reserved}],
-      "mtu": 1280
+      "mtu": 1280,
+      "dns": {
+        "servers": [
+          "https://1.1.1.1/dns-query"
+        ]
+      }
     }
   ],
   "route": {
