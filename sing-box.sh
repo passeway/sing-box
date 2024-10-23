@@ -99,17 +99,6 @@ install_sing_box() {
     "timestamp": true,
     "output": "${LOG_FILE}"
   },
-  "dns": {
-    "servers": [
-      {
-        "address": "https://1.1.1.1/dns-query",
-        "detour": "wireguard-out"
-      },
-      {
-        "address": "system"
-      }
-    ]
-  },
   "inbounds": [
     {
       "type": "hysteria2",
@@ -195,7 +184,7 @@ install_sing_box() {
     {
       "type": "wireguard",
       "tag": "wireguard-out",
-      "server": "${WARP_IPV4}",
+      "server": "engage.cloudflareclient.com",
       "server_port": 2408,
       "local_address": [
         "172.16.0.2/32",
