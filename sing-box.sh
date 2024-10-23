@@ -99,6 +99,17 @@ install_sing_box() {
     "timestamp": true,
     "output": "${LOG_FILE}"
   },
+  "dns": {
+    "servers": [
+      {
+        "address": "https://1.1.1.1/dns-query",
+        "detour": "wireguard-out"
+      },
+      {
+        "address": "system"
+      }
+    ]
+  },
   "inbounds": [
     {
       "type": "hysteria2",
@@ -193,12 +204,7 @@ install_sing_box() {
       "private_key": "${WARP_private}",
       "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
       "reserved": [${WARP_Reserved}],
-      "mtu": 1280,
-      "dns": {
-        "servers": [
-          "https://1.1.1.1/dns-query"
-        ]
-      }
+      "mtu": 1280
     }
   ],
   "route": {
@@ -300,9 +306,9 @@ EOF
     cat "${CLIENT_CONFIG_FILE}"
 }
 
-# 卸载 sing-box
 uninstall_sing_box() {
-    read -p "$(echo -e "${RED}确定要卸载 sing-box 吗? (y/n) ${RESET}")" choice
+    read -p "$(echo -e "${RED}确定要卸载 sing-box 吗? (Y/n) ${RESET}")" choice
+    choice=${choice:-Y}  # 默认设置为 Y
     case "${choice}" in
         y|Y)
             echo -e "${CYAN}正在卸载 sing-box${RESET}"
