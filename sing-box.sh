@@ -385,12 +385,9 @@ status_sing_box() {
 
 # 查看 sing-box 日志
 log_sing_box() {
-    if [ -f "${LOG_FILE}" ]; then
-        tail -n 20 "${LOG_FILE}"
-    else
-        echo -e "${YELLOW}日志文件不存在: ${LOG_FILE}${RESET}"
-    fi
+    cat "${LOG_FILE}"
 }
+
 
 # 查看 sing-box 配置
 check_sing_box() {
