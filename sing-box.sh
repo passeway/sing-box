@@ -102,11 +102,11 @@ install_sing_box() {
   "dns": {
     "servers": [
       {
-        "address": "1.1.1.1",
+        "address": "https://1.1.1.1/dns-query",
         "strategy": "prefer_ipv4"
       },
       {
-        "address": "8.8.8.8",
+        "address": "https://8.8.8.8/dns-query",
         "strategy": "prefer_ipv4"
       }
     ]
