@@ -99,6 +99,12 @@ install_sing_box() {
     "timestamp": true,
     "output": "${LOG_FILE}"
   },
+  "dns": {
+    "servers": [
+      "1.1.1.1", 
+      "8.8.8.8" 
+    ]
+  },
   "inbounds": [
     {
       "type": "hysteria2",
