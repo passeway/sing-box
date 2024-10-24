@@ -4,6 +4,18 @@
     "timestamp": true,
     "output": "${LOG_FILE}"
   },
+  "dns": {
+    "servers": [
+      {
+        "address": "https://1.1.1.1/dns-query",
+        "strategy": "prefer_ipv4"
+      },
+      {
+        "address": "https://8.8.8.8/dns-query",
+        "strategy": "prefer_ipv4"
+      }
+    ]
+  },
   "inbounds": [
     {
       "type": "hysteria2",
@@ -89,15 +101,15 @@
     {
       "type": "wireguard",
       "tag": "wireguard-out",
-      "server": "engage.cloudflareclient.com",
+      "server": "${WARP_IPV4}",
       "server_port": 2408,
       "local_address": [
         "172.16.0.2/32",
-        "${v6}/128"
+        "${WARP_IPV6}/128"
       ],
-      "private_key": "${wprivate_key}",
+      "private_key": "${WARP_private}",
       "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-      "reserved": [${reserved}],
+      "reserved": [${WARP_Reserved}],
       "mtu": 1280
     }
   ],
