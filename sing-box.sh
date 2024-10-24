@@ -99,6 +99,18 @@ install_sing_box() {
     "timestamp": true,
     "output": "${LOG_FILE}"
   },
+  "dns": {
+    "servers": [
+      {
+        "address": "1.1.1.1",
+        "strategy": "prefer_ipv4"
+      },
+      {
+        "address": "8.8.8.8",
+        "strategy": "prefer_ipv4"
+      }
+    ]
+  },
   "inbounds": [
     {
       "type": "hysteria2",
