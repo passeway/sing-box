@@ -15,68 +15,6 @@ bash <(curl -fsSL https://sing-box.app/deb-install.sh)
 ```
 nano /etc/sing-box/config.json
 ```
-```
-{
-  "log": {
-    "level": "info",
-    "timestamp": true,
-    "output": "/var/log/singbox.log"
-  },
-  "inbounds": [
-    {
-      "type": "hysteria2",
-      "listen": "::",
-      "listen_port": 443,
-      "users": [
-          {
-              "password": "your_password" 
-          }
-      ],
-      "masquerade": "https://bing.com",
-      "tls": {
-          "enabled": true,
-          "alpn": [
-              "h3"
-          ],
-          "certificate_path": "/etc/sing-box/cert.pem",
-          "key_path": "/etc/sing-box/private.key"
-      }
-    },
-    {
-      "type": "vless",
-      "listen": "::",
-      "listen_port": 443,
-      "users": [
-          {
-              "uuid": "sing-box generate uuid",
-              "flow": "xtls-rprx-vision"
-          }
-      ],
-      "tls": {
-          "enabled": true,
-          "server_name": "www.tesla.com", 
-          "reality": {
-              "enabled": true,
-              "handshake": {
-                  "server": "www.tesla.com", 
-                  "server_port": 443
-              },
-              "private_key": "sing-box generate reality-keypair", 
-              "short_id": [
-                  "123abc"
-                ]
-              }
-          }
-      }
-  ],
-  "outbounds": [
-    {
-      "type": "direct",
-      "tag": "direct-out"
-    }
-  ]
-}
-```
 查看config.json
 ```
 cat /etc/sing-box/config.json
@@ -112,6 +50,14 @@ systemctl status sing-box
 查看sing-box日志
 ```
 cat /var/log/singbox.log
+```
+实时sing-box日志
+```
+tail -f /var/log/singbox.log
+```
+解码openai.srs
+```
+sing-box rule-set decompile geosite-openai.srs
 ```
 
 
