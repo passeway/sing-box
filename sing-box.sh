@@ -146,10 +146,6 @@ install_sing_box() {
       "tls": {
         "enabled": true,
         "server_name": "www.tesla.com",
-        "alpn": [
-          "h2",
-          "http/1.1"
-        ],
         "reality": {
           "enabled": true,
           "handshake": {
