@@ -116,7 +116,7 @@ install_sing_box() {
       "type": "hysteria2",
       "tag": "hysteria-in",
       "listen": "::",
-      "listen_port": ${hport},
+      "listen_port": "${hport}",
       "users": [
         {
           "password": "${password}"
@@ -136,7 +136,7 @@ install_sing_box() {
       "type": "vless",
       "tag": "vless-in",
       "listen": "::",
-      "listen_port": ${vport},
+      "listen_port": "${vport}",
       "users": [
         {
           "uuid": "${uuid}",
@@ -146,6 +146,10 @@ install_sing_box() {
       "tls": {
         "enabled": true,
         "server_name": "www.tesla.com",
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ],
         "reality": {
           "enabled": true,
           "handshake": {
@@ -162,7 +166,7 @@ install_sing_box() {
     {
       "type": "shadowtls",
       "listen": "::",
-      "listen_port": ${sport},
+      "listen_port": "${sport}",
       "detour": "shadowsocks-in",
       "version": 3,
       "users": [
@@ -180,7 +184,7 @@ install_sing_box() {
       "type": "shadowsocks",
       "tag": "shadowsocks-in",
       "listen": "127.0.0.1",
-      "listen_port": ${ssport},
+      "listen_port": "${ssport}",
       "method": "2022-blake3-aes-128-gcm",
       "password": "${ss_password}",
       "multiplex": {
@@ -196,7 +200,7 @@ install_sing_box() {
     {
       "type": "wireguard",
       "tag": "wireguard-out",
-      "server": "engage.cloudflareclient.com",
+      "server": "${WARP_IPV4}",
       "server_port": 2408,
       "local_address": [
         "172.16.0.2/32",
