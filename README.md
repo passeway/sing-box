@@ -4,7 +4,7 @@
 
 ## 一键脚本
 ```
-bash <(curl -fsSL sing-box-ashen.vercel.app)
+bash <(curl -fsSL sing-box-sigma.vercel.app)
 ```
 ## 安装 sing-box
 下载sing-box
