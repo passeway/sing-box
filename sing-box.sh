@@ -149,7 +149,7 @@ install_sing_box() {
         "reality": {
           "enabled": true,
           "handshake": {
-            "server": "www.tesla.com",
+            "server": "1.1.1.1",
             "server_port": 443
           },
           "private_key": "${private_key}",
