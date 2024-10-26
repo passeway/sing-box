@@ -67,6 +67,24 @@ get_warp_reg() {
     echo -e "${GREEN}WARP_private: $WARP_private${RESET}"
 }
 
+
+# 生成未占用的随机端口
+get_random_port() {
+  while :; do
+    port=$(shuf -i 1025-65535 -n 1)
+    if ! lsof -i:$port >/dev/null; then
+      echo "$port"
+      break
+    fi
+  done
+}
+
+port1=$(get_random_port)
+port2=$(get_random_port)
+port3=$(get_random_port)
+port4=$(get_random_port)
+
+
 # 安装 sing-box
 install_sing_box() {
     echo -e "${CYAN}正在安装 sing-box${RESET}"
@@ -78,10 +96,7 @@ install_sing_box() {
     }
 
     # 生成随机端口和密码
-    port1=$(shuf -i 1025-65535 -n 1)
-    port2=$(shuf -i 1025-65535 -n 1)
-    port3=$(shuf -i 1025-65535 -n 1)
-    port4=$(shuf -i 1025-65535 -n 1)
+    get_random_port
     password1=$(sing-box generate rand 16 --base64)
     password2=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12)
 
@@ -168,7 +183,7 @@ install_sing_box() {
         "reality": {
           "enabled": true,
           "handshake": {
-            "server": "www.tesla.com",
+            "server": "1.1.1.1",
             "server_port": 443
           },
           "private_key": "${private_key}",
