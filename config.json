@@ -1,149 +1,149 @@
 {
   "log": {
-    "level": "debug",
-    "timestamp": true,
-    "output": "${LOG_FILE}"
+    "level": "debug",                   // 日志级别设为 debug，用于详细记录日志
+    "timestamp": true,                  // 日志中是否包含时间戳
+    "output": "${LOG_FILE}"             // 日志文件输出路径，使用环境变量 LOG_FILE
   },
   "dns": {
     "servers": [
       {
-        "address": "https://1.1.1.1/dns-query",
-        "strategy": "prefer_ipv4"
+        "address": "https://1.1.1.1/dns-query", // Cloudflare 的 DNS over HTTPS 服务
+        "strategy": "prefer_ipv4"        // 优先使用 IPv4，如果不可用则使用 IPv6
       },
       {
-        "address": "https://8.8.8.8/dns-query",
-        "strategy": "prefer_ipv4"
+        "address": "https://8.8.8.8/dns-query", // Google 的 DNS over HTTPS 服务
+        "strategy": "prefer_ipv4"        // 同样优先使用 IPv4
       }
     ]
   },
   "inbounds": [
     {
-      "type": "hysteria2",
-      "tag": "hysteria-in",
-      "listen": "::",
-      "listen_port": ${hport},
+      "type": "hysteria2",               // 入站类型，使用 hysteria2 协议
+      "tag": "hysteria-in",              // 入站标识标签
+      "listen": "::",                    // 监听地址，"::" 表示监听所有 IPv6 地址
+      "listen_port": ${hport},           // 监听端口，使用环境变量 hport
       "users": [
         {
-          "password": "${password}"
+          "password": "${password}"      // 连接密码，使用环境变量 password
         }
       ],
-      "masquerade": "https://bing.com",
+      "masquerade": "https://bing.com",  // 掩饰流量为访问 bing.com
       "tls": {
-        "enabled": true,
+        "enabled": true,                 // 启用 TLS
         "alpn": [
-          "h3"
+          "h3"                           // ALPN 设置为 HTTP/3
         ],
-        "certificate_path": "${CONFIG_DIR}/cert.pem",
-        "key_path": "${CONFIG_DIR}/private.key"
+        "certificate_path": "${CONFIG_DIR}/cert.pem", // 证书路径
+        "key_path": "${CONFIG_DIR}/private.key"       // 密钥路径
       }
     },
     {
-      "type": "vless",
-      "tag": "vless-in",
-      "listen": "::",
-      "listen_port": ${vport},
+      "type": "vless",                   // 入站类型，使用 vless 协议
+      "tag": "vless-in",                 // 入站标识标签
+      "listen": "::",                    // 监听所有地址
+      "listen_port": ${vport},           // 监听端口，使用环境变量 vport
       "users": [
         {
-          "uuid": "${uuid}",
-          "flow": "xtls-rprx-vision"
+          "uuid": "${uuid}",             // 用户唯一 ID，使用环境变量 uuid
+          "flow": "xtls-rprx-vision"     // 使用 xtls-rprx-vision 流模式
         }
       ],
       "tls": {
-        "enabled": true,
-        "server_name": "www.tesla.com",
+        "enabled": true,                 // 启用 TLS
+        "server_name": "www.tesla.com",  // SNI 主机名，用于 TLS 握手
         "reality": {
-          "enabled": true,
+          "enabled": true,               // 启用 Reality 协议
           "handshake": {
-            "server": "www.tesla.com",
-            "server_port": 443
+            "server": "www.tesla.com",   // 假装握手的服务器名
+            "server_port": 443           // 服务器端口
           },
-          "private_key": "${private_key}",
+          "private_key": "${private_key}", // Reality 的私钥
           "short_id": [
-            "123abc"
+            "123abc"                     // Reality 的 short ID，用于握手过程
           ]
         }
       }
     },
     {
-      "type": "shadowtls",
-      "listen": "::",
-      "listen_port": ${sport},
-      "detour": "shadowsocks-in",
-      "version": 3,
+      "type": "shadowtls",               // 入站类型，使用 shadowtls 协议
+      "listen": "::",                    // 监听所有地址
+      "listen_port": ${sport},           // 监听端口，使用环境变量 sport
+      "detour": "shadowsocks-in",        // Detour 配置，指定流量转向 shadowsocks-in
+      "version": 3,                      // ShadowTLS 版本
       "users": [
         {
-          "password": "${password}"
+          "password": "${password}"      // 连接密码，使用环境变量 password
         }
       ],
       "handshake": {
-        "server": "www.bing.com",
-        "server_port": 443
+        "server": "www.bing.com",        // 伪装的服务器名
+        "server_port": 443               // 服务器端口
       },
-      "strict_mode": true
+      "strict_mode": true                // 严格模式，启用时会严格验证握手信息
     },
     {
-      "type": "shadowsocks",
-      "tag": "shadowsocks-in",
-      "listen": "127.0.0.1",
-      "listen_port": ${ssport},
-      "method": "2022-blake3-aes-128-gcm",
-      "password": "${ss_password}",
+      "type": "shadowsocks",             // 入站类型，使用 Shadowsocks 协议
+      "tag": "shadowsocks-in",           // 入站标识标签
+      "listen": "127.0.0.1",             // 仅监听本地地址
+      "listen_port": ${ssport},          // 监听端口，使用环境变量 ssport
+      "method": "2022-blake3-aes-128-gcm", // 加密方法
+      "password": "${ss_password}",      // 连接密码，使用环境变量 ss_password
       "multiplex": {
-        "enabled": true
+        "enabled": true                  // 启用多路复用
       }
     }
   ],
   "outbounds": [
     {
-      "type": "direct",
-      "tag": "direct"
+      "type": "direct",                  // 出站类型，直接连接
+      "tag": "direct"                    // 出站标识标签
     },
     {
-      "type": "wireguard",
-      "tag": "wireguard-out",
-      "server": "${WARP_IPV4}",
-      "server_port": 2408,
+      "type": "wireguard",               // 出站类型，使用 WireGuard 协议
+      "tag": "wireguard-out",            // 出站标识标签
+      "server": "${WARP_IPV4}",          // 服务器地址，使用环境变量 WARP_IPV4
+      "server_port": 2408,               // 服务器端口
       "local_address": [
-        "172.16.0.2/32",
-        "${WARP_IPV6}/128"
+        "172.16.0.2/32",                 // 本地 IPv4 地址
+        "${WARP_IPV6}/128"               // 本地 IPv6 地址，使用环境变量 WARP_IPV6
       ],
-      "private_key": "${WARP_private}",
-      "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-      "reserved": [${WARP_Reserved}],
-      "mtu": 1280
+      "private_key": "${WARP_private}",  // 私钥
+      "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=", // 对端的公钥
+      "reserved": [${WARP_Reserved}],    // 预留字段，使用环境变量 WARP_Reserved
+      "mtu": 1280                        // MTU 大小
     }
   ],
   "route": {
     "rule_set": [
       {
-        "tag": "geosite-disney",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-disney.srs",
-        "download_detour": "direct"
+        "tag": "geosite-disney",         // 规则集标签
+        "type": "remote",                // 规则类型为远程规则
+        "format": "binary",              // 规则格式为二进制
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-disney.srs", // 下载地址
+        "download_detour": "direct"      // 下载时使用 direct 出站
       },
       {
-        "tag": "geosite-openai",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
-        "download_detour": "direct"
+        "tag": "geosite-openai",         // 规则集标签
+        "type": "remote",                // 规则类型为远程规则
+        "format": "binary",              // 规则格式为二进制
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs", // 下载地址
+        "download_detour": "direct"      // 下载时使用 direct 出站
       },
       {
-        "tag": "geosite-netflix",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-netflix.srs",
-        "download_detour": "direct"
+        "tag": "geosite-netflix",        // 规则集标签
+        "type": "remote",                // 规则类型为远程规则
+        "format": "binary",              // 规则格式为二进制
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-netflix.srs", // 下载地址
+        "download_detour": "direct"      // 下载时使用 direct 出站
       }
     ],
     "rules": [
       {
-        "outbound": "wireguard-out",
-        "rule_set": ["geosite-disney", "geosite-openai", "geosite-netflix"]
+        "outbound": "wireguard-out",     // 使用 WireGuard 出站
+        "rule_set": ["geosite-disney", "geosite-openai", "geosite-netflix"] // 匹配规则集标签
       },
       {
-        "outbound": "direct",
+        "outbound": "direct",            // 默认所有 UDP 和 TCP 流量都直接连接
         "network": ["udp", "tcp"]
       }
     ]
