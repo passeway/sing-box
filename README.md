@@ -6,6 +6,13 @@
 ```
 bash <(curl -fsSL sing-box-sigma.vercel.app)
 ```
+## 项目简介
+- 自动输出多客户端url方便使用
+
+- 搭建hy2 vless ss2022+shadowtls
+
+- 自带wireguard出站解锁openai netflix disney
+
 ## 安装 sing-box
 下载sing-box
 ```
