@@ -7,11 +7,11 @@
 bash <(curl -fsSL sing-box-sigma.vercel.app)
 ```
 ## 项目简介
-- 自动输出多客户端url方便使用
+- 输出客户端配置 url 方便快速设置
 
-- 搭建hy2 vless ss2022+shadowtls
+- 自带 wireguard 出站解锁 openai netflix disney 
 
-- 自带wireguard出站解锁openai netflix disney
+- 安装 sing-box 配置 hy2 vless ss2022+shadowtls
 
 ## 安装 sing-box
 下载sing-box
