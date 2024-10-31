@@ -291,6 +291,22 @@ EOF
     public-key: ${public_key}
     short-id: 123abc
   client-fingerprint: chrome
+- name: ${ip_country}
+  type: ss
+  server: ${host_ip}
+  port: ${sport}
+  cipher: 2022-blake3-aes-128-gcm
+  password: ${ss_password}
+  udp: true
+  plugin: shadow-tls
+  client-fingerprint: chrome
+  plugin-opts:
+    mode: tls
+    host: www.bing.com
+    password: ${password}
+    version: 3
+  smux:
+    enabled: true
 EOF
         echo
         echo "hy2://${password}@${host_ip}:${hport}?insecure=1&sni=www.bing.com#${ip_country}"
