@@ -267,47 +267,50 @@ EOF
     # 输出客户端配置到文件
     {
         cat << EOF
-- name: ${ip_country}
-  type: hysteria2
-  server: ${host_ip}
-  port: ${hport}
-  password: ${password}
-  alpn:
-   - h3
-  sni: www.bing.com
-  skip-cert-verify: true
-  fast-open: true
-- name: ${ip_country}
-  type: vless
-  server: ${host_ip}
-  port: ${vport}
-  uuid: ${uuid}
-  network: tcp
-  udp: true
-  tls: true
-  flow: xtls-rprx-vision
-  servername: www.tesla.com
-  reality-opts:
-    public-key: ${public_key}
-    short-id: 123abc
-  client-fingerprint: chrome
-- name: ${ip_country}
-  type: ss
-  server: ${host_ip}
-  port: ${sport}
-  cipher: 2022-blake3-aes-128-gcm
-  password: ${ss_password}
-  udp: true
-  plugin: shadow-tls
-  client-fingerprint: chrome
-  plugin-opts:
-    mode: tls
-    host: www.bing.com
+  - name: ${ip_country}
+    type: hysteria2
+    server: ${host_ip}
+    port: ${hport}
     password: ${password}
-    version: 3
-  smux:
-    enabled: true
+    alpn:
+      - h3
+    sni: www.bing.com
+    skip-cert-verify: true
+    fast-open: true
+
+  - name: ${ip_country}
+    type: vless
+    server: ${host_ip}
+    port: ${vport}
+    uuid: ${uuid}
+    network: tcp
+    udp: true
+    tls: true
+    flow: xtls-rprx-vision
+    servername: www.tesla.com
+    reality-opts:
+      public-key: ${public_key}
+      short-id: 123abc
+    client-fingerprint: chrome
+
+  - name: ${ip_country}
+    type: ss
+    server: ${host_ip}
+    port: ${sport}
+    cipher: 2022-blake3-aes-128-gcm
+    password: ${ss_password}
+    udp: true
+    plugin: shadow-tls
+    client-fingerprint: chrome
+    plugin-opts:
+      mode: tls
+      host: www.bing.com
+      password: ${password}
+      version: 3
+    smux:
+      enabled: true
 EOF
+
         echo
         echo "hy2://${password}@${host_ip}:${hport}?insecure=1&sni=www.bing.com#${ip_country}"
         echo
