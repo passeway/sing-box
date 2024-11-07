@@ -39,6 +39,27 @@ is_sing_box_running() {
     return $?
 }
 
+# 检查端口是否已被使用
+is_port_available() {
+    local port=$1
+    if ss -tuln | grep -q ":$port "; then
+        return 1 # 端口已被使用
+    else
+        return 0 # 端口可用
+    fi
+}
+
+# 生成未被占用的端口
+generate_unused_port() {
+    local port
+    while true; do
+        port=$(shuf -i 1025-65535 -n 1)
+        if is_port_available $port; then
+            echo $port
+            return
+        fi
+    done
+}
 
 # 安装 sing-box
 install_sing_box() {
@@ -51,10 +72,10 @@ install_sing_box() {
     }
 
     # 生成随机端口和密码
-    hport=$(shuf -i 1025-65535 -n 1)
-    vport=$(shuf -i 1025-65535 -n 1)
-    sport=$(shuf -i 1025-65535 -n 1)
-    ssport=$(shuf -i 1025-65535 -n 1)
+    hport=$(generate_unused_port)
+    vport=$(generate_unused_port)
+    sport=$(generate_unused_port)
+    ssport=$(generate_unused_port)
     ss_password=$(sing-box generate rand 16 --base64)
     password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12)
 
@@ -63,7 +84,6 @@ install_sing_box() {
     reality_output=$(sing-box generate reality-keypair)
     private_key=$(echo "${reality_output}" | grep -oP 'PrivateKey:\s*\K.*')
     public_key=$(echo "${reality_output}" | grep -oP 'PublicKey:\s*\K.*')
-
 
     # 生成自签名证书
     mkdir -p "${CONFIG_DIR}"
@@ -80,7 +100,6 @@ install_sing_box() {
     host_ip=$(curl -s http://checkip.amazonaws.com)
     ip_country=$(curl -s http://ipinfo.io/${host_ip}/country)
 
-
     # 下载并执行脚本，将输出导入当前shell环境
     eval "$(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/main/wireguard.sh)"
     
@@ -89,7 +108,6 @@ install_sing_box() {
     WARP_IPV6=$(echo "$WARP_IPV6")
     WARP_private=$(echo "$WARP_private")
     WARP_Reserved=$(echo "$WARP_Reserved")
-
 
     # 生成配置文件
     cat > "${CONFIG_FILE}" << EOF
