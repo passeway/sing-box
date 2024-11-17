@@ -7,6 +7,13 @@ echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] ht
 
 # 更新 apt 软件源并安装 Cloudflare WARP 客户端
 sudo apt-get update && sudo apt-get install -y cloudflare-warp
+# 升级 warp+ 账号
+warp-cli registration license 8t1KD74k-02Gu9zj5-j8390Qgl
+# 测试 proxy 模式是否启动
+curl ifconfig.me --proxy socks5://127.0.0.1:40000
+# 查看 warp 账户类型 warp=plus
+curl --proxy http://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace
+
 
 
 warp-cli mode --help           # 查看帮助指令
@@ -17,7 +24,7 @@ warp-cli connect               # 连接到 WARP
 warp-cli disconnect            # 断开 WARP 连接
 warp-cli status                # 查看当前连接状态
 warp-cli registration delete   # 删除当前注册
-curl ifconfig.me --proxy socks5://127.0.0.1:40000
+
 
 
 sudo systemctl stop warp-svc                                        # 停止 WARP 服务
