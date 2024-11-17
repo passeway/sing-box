@@ -238,6 +238,13 @@ install_sing_box() {
       "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
       "reserved": [${WARP_Reserved}],
       "mtu": 1280
+    },
+    {
+      "type": "socks",
+      "tag": "warp_proxy",
+      "server": "127.0.0.1",
+      "server_port": 40000,
+      "version": "5"
     }
   ],
   "route": {
