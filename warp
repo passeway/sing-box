@@ -1,5 +1,5 @@
-安装warp
-# 添加 Cloudflare GPG 密钥，以确保从官方源安装的软件包未被篡改
+# https://pkg.cloudflareclient.com/install
+# 添加 Cloudflare GPG 密钥，以确保从官方源安装的软件包未被篡改 
 curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
 
 # 将 Cloudflare 的软件源添加到系统的 apt 仓库中
@@ -17,9 +17,9 @@ warp-cli connect               # 连接到 WARP
 warp-cli disconnect            # 断开 WARP 连接
 warp-cli status                # 查看当前连接状态
 warp-cli registration delete   # 删除当前注册
+curl ifconfig.me --proxy socks5://127.0.0.1:40000
 
 
-卸载warp
 sudo systemctl stop warp-svc                                        # 停止 WARP 服务
 sudo systemctl disable warp-svc                                     # 禁用 WARP 服务的自动启动
 sudo apt-get purge -y cloudflare-warp                               # 完全卸载客户端及其相关依赖
@@ -27,5 +27,4 @@ sudo rm -f /etc/apt/sources.list.d/cloudflare-client.list           # 删除 apt
 sudo rm -f /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg  # 删除 GPG 密钥
 sudo apt-get update                                                 # 更新 apt 缓存，确保删除后的状态
 sudo systemctl status warp-svc                                      # 查看服务是否已被禁用
-
 
