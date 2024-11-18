@@ -19,6 +19,7 @@ warp-cli registration license 8t1KD74k-02Gu9zj5-j8390Qgl
 curl ifconfig.me --proxy socks5://127.0.0.1:40000
 
 # 查看 warp 账户类型 warp=plus
+curl --proxy http://127.0.0.1:40000 https://chatgpt.com/cdn-cgi/trace
 curl --proxy http://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace
 
 
