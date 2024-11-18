@@ -9,7 +9,7 @@ echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] ht
 sudo apt-get update && sudo apt-get install -y cloudflare-warp
 
 # 更新 apt 软件源并升级 Cloudflare WARP 客户端
-sudo apt-get update && sudo apt upgrade -y cloudflare-warp
+sudo apt-get update && sudo apt-get upgrade -y cloudflare-warp
 
 
 # 升级 warp+ 账号
