@@ -241,7 +241,7 @@ install_sing_box() {
     },
     {
       "type": "socks",
-      "tag": "warp_proxy",
+      "tag": "warp-proxy",
       "server": "127.0.0.1",
       "server_port": 40000,
       "version": "5"
