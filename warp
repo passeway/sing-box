@@ -49,22 +49,3 @@ sudo apt-get update                                                 # 更新 apt
 sudo systemctl status warp-svc                                      # 查看服务是否已被禁用
 
 
-
-
-#项目地址：https://github.com/sjlleo/netflix-verify
-
-#下载检测解锁程序
-wget -O nf https://github.com/sjlleo/netflix-verify/releases/download/v3.1.0-1/nf_linux_amd64 && chmod +x nf
-wget -O nf https://github.com/sjlleo/netflix-verify/releases/download/v3.1.0-1/nf_linux_arm64 && chmod +x nf
-
-#执行检测解锁程序
-./nf
-
-#删除检测解锁程序
-rm nf
-
-#通过代理执行
-./nf -proxy socks5://127.0.0.1:40000
-
-#测试绝命毒师
-./nf -proxy socks5://127.0.0.1:40000 -custom 70143836
