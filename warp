@@ -18,7 +18,7 @@ curl ifconfig.me --proxy socks5://127.0.0.1:40000
 curl --proxy http://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace
 
 
-
+warp-cli --help                # 完整帮助指令
 warp-cli mode --help           # 查看帮助指令
 warp-cli registration new      # 注册新客户端
 warp-cli registration show     # 查看注册信息
