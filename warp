@@ -8,6 +8,10 @@ echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] ht
 # 更新 apt 软件源并安装 Cloudflare WARP 客户端
 sudo apt-get update && sudo apt-get install -y cloudflare-warp
 
+# 更新 apt 软件源并升级 Cloudflare WARP 客户端
+sudo apt-get update && sudo apt upgrade -y cloudflare-warp
+
+
 # 升级 warp+ 账号
 warp-cli registration license 8t1KD74k-02Gu9zj5-j8390Qgl
 
@@ -24,8 +28,9 @@ warp-cli registration new      # 注册新客户端
 warp-cli registration show     # 查看注册信息
 warp-cli mode proxy            # 设置为代理模式
 warp-cli connect               # 连接到 WARP
+warp-cli --version             # 查看安装版本
 warp-cli disconnect            # 断开 WARP 连接
-warp-cli status                # 查看当前连接状态
+warp-cli status                # 当前连接状态
 warp-cli registration delete   # 删除当前注册
 
 
