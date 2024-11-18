@@ -1,4 +1,5 @@
-# https://pkg.cloudflareclient.com/install
+#项目地址：https://pkg.cloudflareclient.com/install
+
 # 添加 Cloudflare GPG 密钥，以确保从官方源安装的软件包未被篡改 
 curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
 
@@ -10,7 +11,6 @@ sudo apt-get update && sudo apt-get install -y cloudflare-warp
 
 # 更新 apt 软件源并升级 Cloudflare WARP 客户端
 sudo apt-get update && sudo apt-get upgrade -y cloudflare-warp
-
 
 # 升级 warp+ 账号
 warp-cli registration license 8t1KD74k-02Gu9zj5-j8390Qgl
@@ -44,3 +44,23 @@ sudo rm -f /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg  # 删除 GPG
 sudo apt-get update                                                 # 更新 apt 缓存，确保删除后的状态
 sudo systemctl status warp-svc                                      # 查看服务是否已被禁用
 
+
+
+
+#项目地址：https://github.com/sjlleo/netflix-verify
+
+#下载检测解锁程序
+wget -O nf https://github.com/sjlleo/netflix-verify/releases/download/v3.1.0-1/nf_linux_amd64 && chmod +x nf
+wget -O nf https://github.com/sjlleo/netflix-verify/releases/download/v3.1.0-1/nf_linux_arm64 && chmod +x nf
+
+#执行检测解锁程序
+./nf
+
+#删除检测解锁程序
+rm nf
+
+#通过代理执行
+./nf -proxy socks5://127.0.0.1:40000
+
+#测试绝命毒师
+./nf -proxy socks5://127.0.0.1:40000 -custom 70143836
