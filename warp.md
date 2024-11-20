@@ -90,4 +90,4 @@ sudo apt-get update                                                 # 更新 apt
 ```
 sudo systemctl status warp-svc                                      # 查看服务是否已被禁用
 ```
-## 项目地址：https://pkg.cloudflareclient.com/install
+## 项目地址：https://pkg.cloudflareclient.com/
