@@ -42,7 +42,7 @@ is_sing_box_running() {
 # 检查 ss 命令是否可用
 check_ss_command() {
     if ! command -v ss &> /dev/null; then
-        echo -e "${YELLOW}ss 命令未找到，正在尝试自动安装 iproute2 包...${RESET}"
+        echo -e "${YELLOW}ss 命令未找到，正在尝试自动安装 iproute2 ${RESET}"
         
         # 检测包管理器并安装
         if command -v apt-get &> /dev/null; then
