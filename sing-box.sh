@@ -38,19 +38,40 @@ is_sing_box_running() {
     systemctl is-active --quiet "${SERVICE_NAME}"
     return $?
 }
+
 # 检查 ss 命令是否可用
 check_ss_command() {
     if ! command -v ss &> /dev/null; then
-        echo -e "${YELLOW}ss 命令未找到，请手动安装 iproute2 包。${RESET}"
-        echo -e "${YELLOW}安装指令：${RESET}"
-        echo -e "${BLUE}Ubuntu/Debian: sudo apt-get install iproute2${RESET}"
-        echo -e "${BLUE}CentOS/RHEL/Fedora: sudo yum install iproute${RESET}"
-        echo -e "${BLUE}Fedora: sudo dnf install iproute${RESET}"
-        echo -e "${BLUE}Arch Linux: sudo pacman -S iproute2${RESET}"
-        echo -e "${BLUE}openSUSE: sudo zypper install iproute2${RESET}"
-        exit 1
+        echo -e "${YELLOW}ss 命令未找到，正在尝试自动安装 iproute2 包...${RESET}"
+        
+        # 检测包管理器并安装
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y iproute2
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y iproute
+        elif command -v dnf &> /dev/null; then
+            sudo dnf install -y iproute
+        elif command -v pacman &> /dev/null; then
+            sudo pacman -Sy --noconfirm iproute2
+        elif command -v zypper &> /dev/null; then
+            sudo zypper install -y iproute2
+        else
+            echo -e "${RED}无法检测到支持的包管理器，请手动安装 iproute2 包。${RESET}"
+            exit 1
+        fi
+        
+        # 再次检查是否安装成功
+        if command -v ss &> /dev/null; then
+            echo -e "${GREEN}iproute2 安装成功，ss 命令已可用。${RESET}"
+        else
+            echo -e "${RED}自动安装失败，请手动安装 iproute2 包。${RESET}"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}ss 命令已可用。${RESET}"
     fi
 }
+
 
 # 检查端口是否已被使用
 is_port_available() {
