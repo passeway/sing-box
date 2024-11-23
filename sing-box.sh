@@ -438,7 +438,6 @@ uninstall_sing_box() {
 
 # 启动 sing-box
 start_sing_box() {
-    echo -e "${CYAN}正在启动 ${SERVICE_NAME} 服务${RESET}"
     systemctl start "${SERVICE_NAME}"
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}${SERVICE_NAME} 服务成功启动${RESET}"
@@ -449,7 +448,6 @@ start_sing_box() {
 
 # 停止 sing-box
 stop_sing_box() {
-    echo -e "${CYAN}正在停止 ${SERVICE_NAME} 服务${RESET}"
     systemctl stop "${SERVICE_NAME}"
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}${SERVICE_NAME} 服务成功停止${RESET}"
@@ -460,7 +458,6 @@ stop_sing_box() {
 
 # 重启 sing-box
 restart_sing_box() {
-    echo -e "${CYAN}正在重启 ${SERVICE_NAME} 服务${RESET}"
     systemctl restart "${SERVICE_NAME}"
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}${SERVICE_NAME} 服务成功重启${RESET}"
