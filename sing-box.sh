@@ -441,7 +441,7 @@ start_sing_box() {
     echo -e "${CYAN}正在启动 ${SERVICE_NAME} 服务${RESET}"
     systemctl start "${SERVICE_NAME}"
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}${SERVICE_NAME} 服务已成功启动${RESET}"
+        echo -e "${GREEN}${SERVICE_NAME} 服务成功启动${RESET}"
     else
         echo -e "${RED}${SERVICE_NAME} 服务启动失败${RESET}"
     fi
@@ -452,7 +452,7 @@ stop_sing_box() {
     echo -e "${CYAN}正在停止 ${SERVICE_NAME} 服务${RESET}"
     systemctl stop "${SERVICE_NAME}"
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}${SERVICE_NAME} 服务已成功停止${RESET}"
+        echo -e "${GREEN}${SERVICE_NAME} 服务成功停止${RESET}"
     else
         echo -e "${RED}${SERVICE_NAME} 服务停止失败${RESET}"
     fi
@@ -463,7 +463,7 @@ restart_sing_box() {
     echo -e "${CYAN}正在重启 ${SERVICE_NAME} 服务${RESET}"
     systemctl restart "${SERVICE_NAME}"
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}${SERVICE_NAME} 服务已成功重启${RESET}"
+        echo -e "${GREEN}${SERVICE_NAME} 服务成功重启${RESET}"
     else
         echo -e "${RED}${SERVICE_NAME} 服务重启失败${RESET}"
     fi
