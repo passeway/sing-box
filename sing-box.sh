@@ -515,7 +515,7 @@ show_menu() {
         echo "7. 查看 sing-box 配置"
     fi
     echo "0. 退出"
-    echo -e "${GREEN}===========================${RESET}"
+    echo -e "${GREEN}=========================${RESET}"
     read -p "请输入选项编号 (0-7): " choice
     echo ""
 }
