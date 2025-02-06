@@ -106,7 +106,8 @@ install_sing_box() {
     }
 
     # 生成随机端口和密码
-    check_and_install_ss
+    check_ss_command
+    is_port_available
     hport=$(generate_unused_port)
     vport=$(generate_unused_port)
     sport=$(generate_unused_port)
