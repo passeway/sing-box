@@ -56,19 +56,19 @@ check_ss_command() {
         elif command -v zypper &> /dev/null; then
             sudo zypper install -y iproute2
         else
-            echo -e "${RED}无法检测到支持的包管理器，请手动安装 iproute2 包。${RESET}"
+            echo -e "${RED}无法检测到支持的包管理器，请手动安装 iproute2 包${RESET}"
             exit 1
         fi
         
         # 再次检查是否安装成功
         if command -v ss &> /dev/null; then
-            echo -e "${GREEN}iproute2 安装成功，ss 命令已可用。${RESET}"
+            echo -e "${GREEN}iproute2 安装成功，ss 命令已可用${RESET}"
         else
-            echo -e "${RED}自动安装失败，请手动安装 iproute2 包。${RESET}"
+            echo -e "${RED}自动安装失败，请手动安装 iproute2 包${RESET}"
             exit 1
         fi
     else
-        echo -e "${GREEN}ss 命令已可用。${RESET}"
+        echo -e "${GREEN}ss 命令可用${RESET}"
     fi
 }
 
