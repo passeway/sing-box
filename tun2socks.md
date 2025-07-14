@@ -63,11 +63,11 @@ tunnel:
   ipv4: 198.18.0.1
 
 socks5:
-  port: 40000
-  address: '2a14:67c0:100::af'
+  port: 20000
+  address: '2a14:67c0:116::1'
   udp: 'udp'
   username: 'alice'
-  password: 'alicefofo123..@'
+  password: 'alicefofo123..OVO'
 EOF
 ```
 
