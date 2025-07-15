@@ -33,7 +33,7 @@ curl -s https://api.github.com/repos/heiher/hev-socks5-tunnel/releases/latest | 
 ### **3.1 下载二进制文件**
 
 ```sh
-curl -L -o "/usr/local/bin/tun2socks" "<实际下载链接>"
+wget -O /usr/local/bin/tun2socks "https://github.com/heiher/hev-socks5-tunnel/releases/download/2.11.0/hev-socks5-tunnel-linux-x86_64"
 ```
 
 ### **3.2 赋予执行权限**
