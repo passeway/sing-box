@@ -3,6 +3,9 @@
 
 ### 开启 TCP BBR
 执行 `lsmod | grep bbr`，如果结果中没有 `tcp_bbr` 的话就先执行
+```bash
+lsmod | grep bbr
+```
 ``` bash
 modprobe tcp_bbr
 echo "tcp_bbr" >> /etc/modules-load.d/modules.conf
