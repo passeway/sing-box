@@ -50,6 +50,9 @@ warp-cli registration new      # 注册新客户端
 warp-cli registration show     # 查看注册信息
 ```
 ```
+warp-cli registration token    # 注册团队账号
+```
+```
 warp-cli mode proxy            # 设置为代理模式
 ```
 ```
@@ -67,6 +70,7 @@ warp-cli status                # 当前连接状态
 ```
 warp-cli registration delete   # 删除当前注册
 ```
+
 
 ## 卸载Cloudflare WARP客户端
 ```
