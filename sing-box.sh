@@ -421,7 +421,7 @@ status_sing_box() {
 
 # 查看 sing-box 日志
 log_sing_box() {
-    cat "${LOG_FILE}"
+    sudo journalctl -u sing-box --output cat -f
 }
 
 
