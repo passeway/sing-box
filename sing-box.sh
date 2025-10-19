@@ -322,9 +322,9 @@ EOF
         echo
         echo "hy2://${password}@${host_ip}:${hysteria_port}?insecure=1&sni=www.bing.com#${ip_country}"
         echo
-        echo "anytls://${ss_password}@${host_ip}:${anytls_port}?security=tls&sni=www.bing.com&allowInsecure=1&type=tcp#${ip_country}"
+        echo "${ip_country} = hysteria2, ${host_ip}, ${hysteria_port}, password = ${password}, skip-cert-verify=true, sni=www.bing.com"
         echo
-        echo "${ip_country} = hysteria2, ${host_ip}, ${hysteria_port}, password = ${password}, skip-cert-verify=true, sni=www.bing.com"     
+        echo "anytls://${ss_password}@${host_ip}:${anytls_port}?security=tls&sni=www.bing.com&allowInsecure=1&type=tcp#${ip_country}"
         echo
         echo "${ip_country} = ss, ${host_ip}, ${shadowtls_port}, encrypt-method=2022-blake3-aes-128-gcm, password=${ss_password}, shadow-tls-password=${password}, shadow-tls-sni=www.bing.com, shadow-tls-version=3, udp-relay=true"
         echo 
@@ -358,13 +358,6 @@ uninstall_sing_box() {
                 echo -e "${YELLOW}无法通过 dpkg 卸载 sing-box，可能未通过 apt 安装。${RESET}"
             }
 
-            # 删除配置文件和日志
-            rm -rf "${CONFIG_DIR}" || {
-                echo -e "${YELLOW}无法删除 ${CONFIG_DIR}。${RESET}"
-            }
-            rm -f "${LOG_FILE}" || {
-                echo -e "${YELLOW}无法删除 ${LOG_FILE}。${RESET}"
-            }
 
             # 重新加载 systemd
             systemctl daemon-reload || {
