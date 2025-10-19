@@ -12,7 +12,6 @@ RESET='\033[0m'
 # 定义常量
 CONFIG_DIR="/etc/sing-box"
 CONFIG_FILE="${CONFIG_DIR}/config.json"
-LOG_FILE="/var/log/singbox.log"
 SERVICE_NAME="sing-box"
 CLIENT_CONFIG_FILE="${CONFIG_DIR}/client.txt"
 
@@ -109,6 +108,7 @@ install_sing_box() {
     check_ss_command
     is_port_available
     vless_port=$(generate_unused_port)
+    hysteria_port=$(generate_unused_port)
     anytls_port=$(generate_unused_port)
     shadowtls_port=$(generate_unused_port)
     shadowsocks_port=$(generate_unused_port)
@@ -142,11 +142,31 @@ install_sing_box() {
     cat > "${CONFIG_FILE}" << EOF
 {
   "log": {
-    "level": "debug",
+    "level": "warn",
     "timestamp": true,
-    "output": "${LOG_FILE}"
+    "output": "stdout"
   },
   "inbounds": [
+    {
+      "type": "hysteria2",
+      "tag": "hysteria-in",
+      "listen": "::",
+      "listen_port": ${hysteria_port},
+      "users": [
+        {
+          "password": "${password}"
+        }
+      ],
+      "masquerade": "https://bing.com",
+      "tls": {
+        "enabled": true,
+        "alpn": [
+          "h3"
+        ],
+        "certificate_path": "${CONFIG_DIR}/cert.pem",
+        "key_path": "${CONFIG_DIR}/private.key"
+      }
+    },
     {
       "type": "vless",
       "tag": "vless-in",
@@ -256,6 +276,17 @@ EOF
     {
         cat << EOF
   - name: ${ip_country}
+    type: hysteria2
+    server: ${hysteria_port}
+    port: ${hport}
+    password: ${password}
+    alpn:
+      - h3
+    sni: www.bing.com
+    skip-cert-verify: true
+    fast-open: true
+
+  - name: ${ip_country}
     type: vless
     server: ${host_ip}
     port: ${vless_port}
@@ -288,7 +319,10 @@ EOF
       enabled: true
 EOF
 
-
+        echo
+        echo "hy2://${password}@${host_ip}:${hysteria_port}?insecure=1&sni=www.bing.com#${ip_country}"
+        echo
+        echo "${ip_country} = hysteria2, ${host_ip}, ${hysteria_port}, password = ${password}, skip-cert-verify=true, sni=www.bing.com"
         echo
         echo "${ip_country} = ss, ${host_ip}, ${shadowtls_port}, encrypt-method=2022-blake3-aes-128-gcm, password=${ss_password}, shadow-tls-password=${password}, shadow-tls-sni=www.bing.com, shadow-tls-version=3, udp-relay=true"
         echo 
