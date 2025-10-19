@@ -108,10 +108,11 @@ install_sing_box() {
     # 生成随机端口和密码
     check_ss_command
     is_port_available
-    hport=$(generate_unused_port)
-    vport=$(generate_unused_port)
-    sport=$(generate_unused_port)
-    ssport=$(generate_unused_port)
+    vless_port=$(generate_unused_port)
+    hysteria_port=$(generate_unused_port)
+    anytls_port=$(generate_unused_port)
+    shadowtls_port=$(generate_unused_port)
+    shadowsocks_port=$(generate_unused_port)
     ss_password=$(sing-box generate rand 16 --base64)
     password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12)
 
@@ -136,14 +137,7 @@ install_sing_box() {
     host_ip=$(curl -s http://checkip.amazonaws.com)
     ip_country=$(curl -s http://ipinfo.io/${host_ip}/country)
 
-    # 下载并执行脚本，将输出导入当前shell环境
-    eval "$(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/main/wireguard.sh)"
-    
-    # 提取变量
-    WARP_IPV4=$(echo "$WARP_IPV4")
-    WARP_IPV6=$(echo "$WARP_IPV6")
-    WARP_private=$(echo "$WARP_private")
-    WARP_Reserved=$(echo "$WARP_Reserved")
+
 
     # 生成配置文件
     cat > "${CONFIG_FILE}" << EOF
@@ -153,24 +147,12 @@ install_sing_box() {
     "timestamp": true,
     "output": "${LOG_FILE}"
   },
-  "dns": {
-    "servers": [
-      {
-        "address": "https://1.1.1.1/dns-query",
-        "strategy": "prefer_ipv4"
-      },
-      {
-        "address": "https://8.8.8.8/dns-query",
-        "strategy": "prefer_ipv4"
-      }
-    ]
-  },
   "inbounds": [
     {
       "type": "hysteria2",
       "tag": "hysteria-in",
       "listen": "::",
-      "listen_port": ${hport},
+      "listen_port": ${hysteria_port},
       "users": [
         {
           "password": "${password}"
@@ -190,7 +172,7 @@ install_sing_box() {
       "type": "vless",
       "tag": "vless-in",
       "listen": "::",
-      "listen_port": ${vport},
+      "listen_port": ${vless_port},
       "users": [
         {
           "uuid": "${uuid}",
@@ -214,9 +196,31 @@ install_sing_box() {
       }
     },
     {
+      "type": "anytls",
+      "tag": "anytls-in",
+      "listen": "::",
+      "listen_port": ${anytls_port},
+      "users": [
+        {
+          "name": "${uuid}",
+          "password": "${ss_password}"
+        }
+      ],
+      "padding_scheme": [],
+      "tls": {
+        "enabled": true,
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ],
+        "certificate_path": "${CONFIG_DIR}/cert.pem",
+        "key_path": "${CONFIG_DIR}/private.key"
+      }
+    },
+    {
       "type": "shadowtls",
       "listen": "::",
-      "listen_port": ${sport},
+      "listen_port": ${shadowtls_port},
       "detour": "shadowsocks-in",
       "version": 3,
       "users": [
@@ -234,7 +238,7 @@ install_sing_box() {
       "type": "shadowsocks",
       "tag": "shadowsocks-in",
       "listen": "127.0.0.1",
-      "listen_port": ${ssport},
+      "listen_port": ${shadowsocks_port},
       "method": "2022-blake3-aes-128-gcm",
       "password": "${ss_password}",
       "multiplex": {
@@ -246,64 +250,8 @@ install_sing_box() {
     {
       "type": "direct",
       "tag": "direct"
-    },
-    {
-      "type": "wireguard",
-      "tag": "wireguard-out",
-      "server": "${WARP_IPV4}",
-      "server_port": 2408,
-      "local_address": [
-        "172.16.0.2/32",
-        "${WARP_IPV6}/128"
-      ],
-      "private_key": "${WARP_private}",
-      "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-      "reserved": [${WARP_Reserved}],
-      "mtu": 1280
-    },
-    {
-      "type": "socks",
-      "tag": "warp-proxy",
-      "server": "127.0.0.1",
-      "server_port": 40000,
-      "version": "5"
     }
-  ],
-  "route": {
-    "rule_set": [
-      {
-        "tag": "geosite-disney",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-disney.srs",
-        "download_detour": "direct"
-      },
-      {
-        "tag": "geosite-openai",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
-        "download_detour": "direct"
-      },
-      {
-        "tag": "geosite-netflix",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-netflix.srs",
-        "download_detour": "direct"
-      }
-    ],
-    "rules": [
-      {
-        "outbound": "wireguard-out",
-        "rule_set": ["geosite-disney", "geosite-openai", "geosite-netflix"]
-      },
-      {
-        "outbound": "direct",
-        "network": ["udp", "tcp"]
-      }
-    ]
-  }
+  ]
 }
 EOF
 
@@ -330,7 +278,7 @@ EOF
         cat << EOF
   - name: ${ip_country}
     type: hysteria2
-    server: ${host_ip}
+    server: ${hysteria_port}
     port: ${hport}
     password: ${password}
     alpn:
@@ -342,7 +290,7 @@ EOF
   - name: ${ip_country}
     type: vless
     server: ${host_ip}
-    port: ${vport}
+    port: ${vless_port}
     uuid: ${uuid}
     network: tcp
     udp: true
@@ -357,7 +305,7 @@ EOF
   - name: ${ip_country}
     type: ss
     server: ${host_ip}
-    port: ${sport}
+    port: ${shadowtls_port}
     cipher: 2022-blake3-aes-128-gcm
     password: ${ss_password}
     udp: true
@@ -373,13 +321,13 @@ EOF
 EOF
 
         echo
-        echo "hy2://${password}@${host_ip}:${hport}?insecure=1&sni=www.bing.com#${ip_country}"
+        echo "hy2://${password}@${host_ip}:${hysteria_port}?insecure=1&sni=www.bing.com#${ip_country}"
         echo
-        echo "${ip_country} = hysteria2, ${host_ip}, ${hport}, password = ${password}, skip-cert-verify=true, sni=www.bing.com"
+        echo "${ip_country} = hysteria2, ${host_ip}, ${hysteria_port}, password = ${password}, skip-cert-verify=true, sni=www.bing.com"
         echo
-        echo "${ip_country} = ss, ${host_ip}, ${sport}, encrypt-method=2022-blake3-aes-128-gcm, password=${ss_password}, shadow-tls-password=${password}, shadow-tls-sni=www.bing.com, shadow-tls-version=3, udp-relay=true"
+        echo "${ip_country} = ss, ${host_ip}, ${shadowtls_port}, encrypt-method=2022-blake3-aes-128-gcm, password=${ss_password}, shadow-tls-password=${password}, shadow-tls-sni=www.bing.com, shadow-tls-version=3, udp-relay=true"
         echo 
-        echo "vless://${uuid}@${host_ip}:${vport}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.tesla.com&fp=chrome&pbk=${public_key}&sid=123abc&type=tcp&headerType=none#${ip_country}"
+        echo "vless://${uuid}@${host_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.tesla.com&fp=chrome&pbk=${public_key}&sid=123abc&type=tcp&headerType=none#${ip_country}"
         echo
     } > "${CLIENT_CONFIG_FILE}"
 
