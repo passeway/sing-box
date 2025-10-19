@@ -48,13 +48,10 @@ systemctl restart sing-box
 ```
 systemctl status sing-box
 ```
-查看sing-box日志
-```
-cat /var/log/singbox.log
-```
+
 实时sing-box日志
 ```
-tail -f /var/log/singbox.log
+sudo journalctl -u sing-box --output cat -f
 ```
 解码openai.srs
 ```
@@ -75,7 +72,6 @@ dpkg --purge sing-box
 删除sing-box
 ```
 rm -rf /etc/sing-box
-rm -f /var/log/singbox.log
 ```
 重载systemd
 ```
