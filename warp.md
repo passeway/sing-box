@@ -16,9 +16,9 @@ sudo apt-get update && sudo apt-get install -y cloudflare-warp
 ```
 sudo apt-get update && sudo apt-get upgrade -y cloudflare-warp
 ```
-升级 warp+ 账号
+升级 Teams 账号
 ```
-warp-cli registration license 8t1KD74k-02Gu9zj5-j8390Qgl
+warp-cli registration token com.cloudflare.warp://团队名称.cloudflareaccess.com/auth?token=xxx
 ```
 测试 proxy 模式是否启动
 ```
