@@ -205,13 +205,8 @@ install_sing_box() {
           "password": "${public_key}"
         }
       ],
-      "padding_scheme": [],
       "tls": {
         "enabled": true,
-        "alpn": [
-          "h2",
-          "http/1.1"
-        ],
         "certificate_path": "${CONFIG_DIR}/cert.pem",
         "key_path": "${CONFIG_DIR}/private.key"
       }
