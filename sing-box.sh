@@ -123,11 +123,11 @@ install_sing_box() {
 
     # 生成自签名证书
     mkdir -p "${CONFIG_DIR}"
-    openssl ecparam -genkey -name prime256v1 -out "${CONFIG_DIR}/private.key" || {
+    openssl ecparam -genkey -name prime256v1 -out "${CONFIG_DIR}/key.pem" || {
         echo -e "${RED}生成私钥失败${RESET}"
         exit 1
     }
-    openssl req -new -x509 -days 3650 -key "${CONFIG_DIR}/private.key" -out "${CONFIG_DIR}/cert.pem" -subj "/CN=bing.com" || {
+    openssl req -new -x509 -days 3650 -key "${CONFIG_DIR}/key.pem" -out "${CONFIG_DIR}/cert.pem" -subj "/CN=bing.com" || {
         echo -e "${RED}生成证书失败${RESET}"
         exit 1
     }
@@ -164,7 +164,7 @@ install_sing_box() {
           "h3"
         ],
         "certificate_path": "${CONFIG_DIR}/cert.pem",
-        "key_path": "${CONFIG_DIR}/private.key"
+        "key_path": "${CONFIG_DIR}/key.pem"
       }
     },
     {
@@ -208,7 +208,7 @@ install_sing_box() {
       "tls": {
         "enabled": true,
         "certificate_path": "${CONFIG_DIR}/cert.pem",
-        "key_path": "${CONFIG_DIR}/private.key"
+        "key_path": "${CONFIG_DIR}/key.pem"
       }
     },
     {
