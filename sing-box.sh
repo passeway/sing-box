@@ -180,11 +180,11 @@ install_sing_box() {
       ],
       "tls": {
         "enabled": true,
-        "server_name": "www.tesla.com",
+        "server_name": "www.ua.edu",
         "reality": {
           "enabled": true,
           "handshake": {
-            "server": "www.tesla.com",
+            "server": "www.ua.edu",
             "server_port": 443
           },
           "private_key": "${private_key}",
@@ -290,7 +290,7 @@ EOF
     udp: true
     tls: true
     flow: xtls-rprx-vision
-    servername: www.tesla.com
+    servername: www.ua.edu
     reality-opts:
       public-key: ${public_key}
       short-id: 123abc
@@ -325,7 +325,7 @@ EOF
         echo
         echo "${ip_country} = ss, ${host_ip}, ${shadowtls_port}, encrypt-method=2022-blake3-aes-128-gcm, password=${ss_password}, shadow-tls-password=${password}, shadow-tls-sni=www.bing.com, shadow-tls-version=3, udp-relay=true"
         echo 
-        echo "vless://${uuid}@${host_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.tesla.com&fp=chrome&pbk=${public_key}&sid=123abc&type=tcp&headerType=none#${ip_country}"
+        echo "vless://${uuid}@${host_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.ua.edu&fp=chrome&pbk=${public_key}&sid=123abc&type=tcp&headerType=none#${ip_country}"
         echo
     } > "${CLIENT_CONFIG_FILE}"
 
