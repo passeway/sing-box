@@ -96,6 +96,21 @@ class ManagerTests(unittest.TestCase):
         self.assertIn('psk=some-test-psk, version=6',out)
         c['inbounds'][0]['listen_port']=41111
         self.assertIn('"port": 41111',NS['export'](c,{'address':'203.0.113.1'}))
+    def test_v2rayn_share_parameters_and_scalar_short_id(self):
+        from urllib.parse import urlsplit, parse_qs
+        for short_ids in ['123abc', ['123abc'], '', []]:
+            c={'inbounds':[
+                {'type':'vless','listen_port':34359,'users':[{'uuid':'test-uuid'}],
+                 'tls':{'reality':{'private_key':'test','short_id':short_ids}}},
+                {'type':'anytls','listen_port':47903,'users':[{'password':'test-password'}]},
+                {'type':'hysteria2','listen_port':38183,'users':[{'password':'test-password'}]}]}
+            with patch.dict(NS, {'public_key':lambda _: 'test-public-key'}):
+                out=NS['export'](c,{'address':'203.0.113.1'})
+            links={urlsplit(line).scheme:parse_qs(urlsplit(line).query,keep_blank_values=True)
+                   for line in out.splitlines() if line.startswith(('vless://','anytls://','hy2://'))}
+            self.assertEqual(links['vless']['sid'],['123abc' if short_ids else ''])
+            self.assertEqual(links['anytls']['insecure'],['1'])
+            self.assertEqual(links['hy2']['insecure'],['1'])
     def test_cleanup_never_uninstalls_or_recursively_removes(self):
         code=(ROOT/'disk-cleanup-full.sh').read_text()
         code=code.replace('if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then cleanup_main "$@"; fi','')
