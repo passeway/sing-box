@@ -350,11 +350,22 @@ uninstall_service() {
     echo "sing-box 卸载成功"
 }
 show_menu() {
+    local installed=false running=false
+    is_installed && installed=true
+    is_running && running=true
     clear
     echo '=== sing-box 管理工具 ==='
-    if is_installed; then echo '安装状态: 已安装'; else echo '安装状态: 未安装'; fi
-    if is_running; then echo '运行状态: 已运行'; else echo '运行状态: 未运行'; fi
-    printf '%s\n' '1. 安装（Hysteria2 / VLESS / AnyTLS / Shadowsocks / Snell）' '2. 卸载' '3. 启动/停止' '4. 重启' '5. 查看状态' '6. 查看日志' '7. 重新生成并查看客户端配置' '8. 更新内核并迁移协议配置' '0. 退出'
+    if "$installed"; then echo '安装状态: 已安装'; else echo '安装状态: 未安装'; fi
+    if "$running"; then echo '运行状态: 已运行'; else echo '运行状态: 未运行'; fi
+    echo
+    echo '1. 安装 sing-box 服务'
+    echo '2. 卸载 sing-box 服务'
+    if "$installed"; then
+        if "$running"; then echo '3. 停止 sing-box 服务'; else echo '3. 启动 sing-box 服务'; fi
+        printf '%s\n' '4. 重启 sing-box 服务' '5. 查看 sing-box 状态' '6. 查看 sing-box 日志' '7. 查看 sing-box 配置' '8. 更新 sing-box 内核'
+    fi
+    echo '0. 退出'
+    echo '======================'
     read -r -p '请输入选项编号: ' choice
 }
 main() {
