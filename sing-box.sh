@@ -173,13 +173,14 @@ def export(config,meta):
             surge.append(f'{label} = hysteria2, {host}, {port}, password={password}, skip-cert-verify=true, sni={sni}')
             links.append(f'hy2://{quote(password,safe="")}@{authority}:{port}?insecure=1&sni={quote(sni)}#{quote(label)}')
         elif kind=='vless':
-            user=x['users'][0]; reality=tls['reality']; public=public_key(reality['private_key']); sid=reality.get('short_id',[''])[0]
+            user=x['users'][0]; reality=tls['reality']; public=public_key(reality['private_key']); short_ids=reality.get('short_id',[])
+            sid=short_ids if isinstance(short_ids,str) else (short_ids[0] if short_ids else '')
             p.update(uuid=user['uuid'],network='tcp',udp=True,tls=True,flow=user.get('flow',''),servername=sni,**{'reality-opts':{'public-key':public,'short-id':sid},'client-fingerprint':'chrome'})
             links.append(f'vless://{user["uuid"]}@{authority}:{port}?encryption=none&flow={quote(user.get("flow",""))}&security=reality&sni={quote(sni)}&fp=chrome&pbk={public}&sid={sid}&type=tcp#{quote(label)}')
         elif kind=='anytls':
             password=x['users'][0]['password']; p.update(password=password,sni=sni,**{'skip-cert-verify':True})
             surge.append(f'{label} = anytls, {host}, {port}, password={password}, skip-cert-verify=true, sni={sni}')
-            links.append(f'anytls://{quote(password,safe="")}@{authority}:{port}?security=tls&sni={quote(sni)}&allowInsecure=1#{quote(label)}')
+            links.append(f'anytls://{quote(password,safe="")}@{authority}:{port}?security=tls&sni={quote(sni)}&insecure=1&type=tcp&headerType=none#{quote(label)}')
         elif kind=='shadowsocks':
             p.update(type='ss',cipher=x['method'],password=x['password'],udp=True)
             surge.append(f'{label} = ss, {host}, {port}, encrypt-method={x["method"]}, password={x["password"]}, udp-relay=true')
