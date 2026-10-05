@@ -1,531 +1,382 @@
-#!/bin/bash
-
-# 定义颜色代码
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-RESET='\033[0m'
-
-# 定义常量
+#!/usr/bin/env bash
+# Debian / Ubuntu / Alpine multi-protocol server manager.
+SING_BOX_VERSION="1.14.2"
 CONFIG_DIR="/etc/sing-box"
-CONFIG_FILE="${CONFIG_DIR}/config.json"
+CONFIG_FILE="$CONFIG_DIR/config.json"
+CLIENT_CONFIG_FILE="$CONFIG_DIR/client.txt"
+META_FILE="$CONFIG_DIR/client-meta.json"
+BINARY="/usr/local/bin/sing-box"
 SERVICE_NAME="sing-box"
-CLIENT_CONFIG_FILE="${CONFIG_DIR}/client.txt"
 
-# 检查 root 权限
-check_root() {
-    if [ "$(id -u)" != "0" ]; then
-        echo -e "${RED}请使用 root 权限执行此脚本！${RESET}"
-        exit 1
-    fi
+fail() { printf '错误：%s\n' "$*" >&2; return 1; }
+get_system_type() {
+    local ID=""
+    [ -r /etc/os-release ] && . /etc/os-release
+    case "$ID" in debian|ubuntu|alpine) printf '%s\n' "$ID";; *) return 1;; esac
 }
-
-# 检查 sing-box 是否已安装
-is_sing_box_installed() {
-    if command -v sing-box &> /dev/null; then
-        return 0
-    else
-        return 1
-    fi
+get_architecture() {
+    case "$(uname -m)" in x86_64|amd64) echo amd64;; aarch64|arm64) echo arm64;; *) fail "仅支持 AMD64 / ARM64";; esac
 }
-
-# 检查 sing-box 运行状态
-is_sing_box_running() {
-    systemctl is-active --quiet "${SERVICE_NAME}"
-    return $?
-}
-
-# 检查 ss 命令是否可用
-check_ss_command() {
-    if ! command -v ss &> /dev/null; then
-        echo -e "${YELLOW}ss 命令未找到，正在尝试自动安装 iproute2 ${RESET}"
-        
-        # 检测包管理器并安装
-        if command -v apt-get &> /dev/null; then
-            sudo apt-get update && sudo apt-get install -y iproute2
-        elif command -v yum &> /dev/null; then
-            sudo yum install -y iproute
-        elif command -v dnf &> /dev/null; then
-            sudo dnf install -y iproute
-        elif command -v pacman &> /dev/null; then
-            sudo pacman -Sy --noconfirm iproute2
-        elif command -v zypper &> /dev/null; then
-            sudo zypper install -y iproute2
-        else
-            echo -e "${RED}无法检测到支持的包管理器，请手动安装 iproute2 包${RESET}"
-            exit 1
-        fi
-        
-        # 再次检查是否安装成功
-        if command -v ss &> /dev/null; then
-            echo -e "${GREEN}iproute2 安装成功，ss 命令已可用${RESET}"
-        else
-            echo -e "${RED}自动安装失败，请手动安装 iproute2 包${RESET}"
-            exit 1
-        fi
-    else
-        echo -e "${GREEN}ss 命令可用${RESET}"
-    fi
-}
-
-
-# 检查端口是否已被使用
-is_port_available() {
-    local port=$1
-    if ss -tuln | grep -q ":$port "; then
-        return 1 # 端口已被使用
-    else
-        return 0 # 端口可用
-    fi
-}
-
-# 生成未被占用的端口
-generate_unused_port() {
-    local port
-    while true; do
-        port=$(shuf -i 1025-65535 -n 1)
-        if is_port_available $port; then
-            echo $port
-            return
-        fi
-    done
-}
-
-# 安装 sing-box
-install_sing_box() {
-    echo -e "${CYAN}正在安装 sing-box${RESET}"
-
-    # 下载并运行 sing-box 安装脚本
-    bash <(curl -fsSL https://sing-box.app/deb-install.sh) || {
-        echo -e "${RED}sing-box 安装失败！请检查网络连接或安装脚本来源。${RESET}"
-        exit 1
-    }
-
-    # 生成随机端口和密码
-    check_ss_command
-    is_port_available
-    vless_port=$(generate_unused_port)
-    hysteria_port=$(generate_unused_port)
-    anytls_port=$(generate_unused_port)
-    shadowtls_port=$(generate_unused_port)
-    shadowsocks_port=$(generate_unused_port)
-    ss_password=$(sing-box generate rand 16 --base64)
-    password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12)
-
-    # 生成 UUID 和 Reality 密钥对
-    uuid=$(sing-box generate uuid)
-    reality_output=$(sing-box generate reality-keypair)
-    private_key=$(echo "${reality_output}" | grep -oP 'PrivateKey:\s*\K.*')
-    public_key=$(echo "${reality_output}" | grep -oP 'PublicKey:\s*\K.*')
-
-    # 生成自签名证书
-    mkdir -p "${CONFIG_DIR}"
-    openssl ecparam -genkey -name prime256v1 -out "${CONFIG_DIR}/key.pem" || {
-        echo -e "${RED}生成私钥失败${RESET}"
-        exit 1
-    }
-    openssl req -new -x509 -days 3650 -key "${CONFIG_DIR}/key.pem" -out "${CONFIG_DIR}/cert.pem" -subj "/CN=bing.com" || {
-        echo -e "${RED}生成证书失败${RESET}"
-        exit 1
-    }
-
-    # 获取本机 IP 地址和所在国家
-    host_ip=$(curl -s http://checkip.amazonaws.com)
-    ip_country=$(curl -s http://ipinfo.io/${host_ip}/country)
-
-
-
-    # 生成配置文件
-    cat > "${CONFIG_FILE}" << EOF
-{
-  "log": {
-    "level": "warn",
-    "timestamp": true,
-    "output": "stdout"
-  },
-  "inbounds": [
-    {
-      "type": "hysteria2",
-      "tag": "hysteria-in",
-      "listen": "::",
-      "listen_port": ${hysteria_port},
-      "users": [
-        {
-          "password": "${password}"
-        }
-      ],
-      "masquerade": "https://bing.com",
-      "tls": {
-        "enabled": true,
-        "alpn": [
-          "h3"
-        ],
-        "certificate_path": "${CONFIG_DIR}/cert.pem",
-        "key_path": "${CONFIG_DIR}/key.pem"
-      }
-    },
-    {
-      "type": "vless",
-      "tag": "vless-in",
-      "listen": "::",
-      "listen_port": ${vless_port},
-      "users": [
-        {
-          "uuid": "${uuid}",
-          "flow": "xtls-rprx-vision"
-        }
-      ],
-      "tls": {
-        "enabled": true,
-        "server_name": "www.ua.edu",
-        "reality": {
-          "enabled": true,
-          "handshake": {
-            "server": "www.ua.edu",
-            "server_port": 443
-          },
-          "private_key": "${private_key}",
-          "short_id": [
-            "123abc"
-          ]
-        }
-      }
-    },
-    {
-      "type": "anytls",
-      "tag": "anytls-in",
-      "listen": "::",
-      "listen_port": ${anytls_port},
-      "users": [
-        {
-          "name": "${uuid}",
-          "password": "${public_key}"
-        }
-      ],
-      "tls": {
-        "enabled": true,
-        "certificate_path": "${CONFIG_DIR}/cert.pem",
-        "key_path": "${CONFIG_DIR}/key.pem"
-      }
-    },
-    {
-      "type": "shadowtls",
-      "listen": "::",
-      "listen_port": ${shadowtls_port},
-      "detour": "shadowsocks-in",
-      "version": 3,
-      "users": [
-        {
-          "password": "${password}"
-        }
-      ],
-      "handshake": {
-        "server": "www.bing.com",
-        "server_port": 443
-      },
-      "strict_mode": true
-    },
-    {
-      "type": "shadowsocks",
-      "tag": "shadowsocks-in",
-      "listen": "127.0.0.1",
-      "listen_port": ${shadowsocks_port},
-      "method": "2022-blake3-aes-128-gcm",
-      "password": "${ss_password}",
-      "multiplex": {
-        "enabled": true
-      }
-    }
-  ],
-  "outbounds": [
-    {
-      "type": "direct",
-      "tag": "direct"
-    }
-  ]
-}
-EOF
-
-    # 启用并启动 sing-box 服务
-    systemctl enable "${SERVICE_NAME}" || {
-        echo -e "${RED}无法启用 ${SERVICE_NAME} 服务！${RESET}"
-        exit 1
-    }
-
-    systemctl start "${SERVICE_NAME}" || {
-        echo -e "${RED}无法启动 ${SERVICE_NAME} 服务！${RESET}"
-        exit 1
-    }
-
-    # 检查服务状态
-    if ! is_sing_box_running; then
-        echo -e "${RED}${SERVICE_NAME} 服务未成功启动！${RESET}"
-        systemctl status "${SERVICE_NAME}"
-        exit 1
-    fi
-
-    # 输出客户端配置到文件
-    {
-        cat << EOF
-  - name: ${ip_country}
-    type: hysteria2
-    server: ${hysteria_port}
-    port: ${hport}
-    password: ${password}
-    alpn:
-      - h3
-    sni: www.bing.com
-    skip-cert-verify: true
-    fast-open: true
-
-  - name: ${ip_country}
-    type: vless
-    server: ${host_ip}
-    port: ${vless_port}
-    uuid: ${uuid}
-    network: tcp
-    udp: true
-    tls: true
-    flow: xtls-rprx-vision
-    servername: www.ua.edu
-    reality-opts:
-      public-key: ${public_key}
-      short-id: 123abc
-    client-fingerprint: chrome
-
-  - name: ${ip_country}
-    type: ss
-    server: ${host_ip}
-    port: ${shadowtls_port}
-    cipher: 2022-blake3-aes-128-gcm
-    password: ${ss_password}
-    udp: true
-    plugin: shadow-tls
-    client-fingerprint: chrome
-    plugin-opts:
-      mode: tls
-      host: www.bing.com
-      password: ${password}
-      version: 3
-    smux:
-      enabled: true
-EOF
-
-        echo
-        echo "hy2://${password}@${host_ip}:${hysteria_port}?insecure=1&sni=www.bing.com#${ip_country}"
-        echo
-        echo "${ip_country} = hysteria2, ${host_ip}, ${hysteria_port}, password = ${password}, skip-cert-verify=true, sni=www.bing.com"
-        echo
-        echo "${ip_country} = anytls, ${host_ip}, ${anytls_port}, password = ${public_key}, skip-cert-verify=true, sni=www.bing.com"
-        echo
-        echo "anytls://${public_key}@${host_ip}:${anytls_port}?security=tls&sni=www.bing.com&allowInsecure=1&type=tcp#${ip_country}"
-        echo
-        echo "${ip_country} = ss, ${host_ip}, ${shadowtls_port}, encrypt-method=2022-blake3-aes-128-gcm, password=${ss_password}, shadow-tls-password=${password}, shadow-tls-sni=www.bing.com, shadow-tls-version=3, udp-relay=true"
-        echo 
-        echo "vless://${uuid}@${host_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.ua.edu&fp=chrome&pbk=${public_key}&sid=123abc&type=tcp&headerType=none#${ip_country}"
-        echo
-    } > "${CLIENT_CONFIG_FILE}"
-
-    echo -e "${GREEN}sing-box 安装成功${RESET}"
-    cat "${CLIENT_CONFIG_FILE}"
-}
-
-uninstall_sing_box() {
-    read -p "$(echo -e "${RED}确定要卸载 sing-box 吗? (Y/n) ${RESET}")" choice
-    choice=${choice:-Y}  # 默认设置为 Y
-    case "${choice}" in
-        y|Y)
-            echo -e "${CYAN}正在卸载 sing-box${RESET}"
-
-            # 停止 sing-box 服务
-            systemctl stop "${SERVICE_NAME}" || {
-                echo -e "${RED}停止 sing-box 服务失败。${RESET}"
-            }
-
-            # 禁用 sing-box 服务
-            systemctl disable "${SERVICE_NAME}" || {
-                echo -e "${RED}禁用 sing-box 服务失败。${RESET}"
-            }
-
-            # 卸载 sing-box
-            dpkg --purge sing-box || {
-                echo -e "${YELLOW}无法通过 dpkg 卸载 sing-box，可能未通过 apt 安装。${RESET}"
-            }
-
-
-            # 重新加载 systemd
-            systemctl daemon-reload || {
-                echo -e "${YELLOW}无法重新加载 systemd 守护进程。${RESET}"
-            }
-
-            # 删除 sing-box 可执行文件，如果存在
-            if [ -f "/usr/local/bin/sing-box" ]; then
-                rm /usr/local/bin/sing-box || {
-                    echo -e "${YELLOW}无法删除 /usr/local/bin/sing-box。${RESET}"
-                }
-            fi
-
-            echo -e "${GREEN}sing-box 卸载成功${RESET}"
-            ;;
-        *)
-            echo -e "${YELLOW}已取消卸载操作${RESET}"
-            ;;
+install_dependencies() {
+    case "$(get_system_type)" in
+        debian|ubuntu)
+            apt-get update && apt-get -o DPkg::Lock::Timeout=120 install -y curl ca-certificates tar gzip openssl python3 iproute2 || return 1;;
+        alpine)
+            apk add --no-cache bash curl ca-certificates tar gzip openssl python3 iproute2 openrc busybox-initscripts logrotate gcompat libstdc++ || return 1;;
+        *) fail "仅支持 Debian、Ubuntu、Alpine"; return 1;;
     esac
 }
+is_installed() { command -v sing-box >/dev/null 2>&1 || [ -x "$BINARY" ]; }
+service_action() {
+    if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" "$1"
+    else systemctl "$1" "$SERVICE_NAME"; fi
+}
+is_running() {
+    if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" status >/dev/null 2>&1
+    else systemctl is-active --quiet "$SERVICE_NAME"; fi
+}
+write_file() (
+    local target="$1" mode="$2" temporary
+    temporary=$(mktemp "${target}.tmp.XXXXXX") || return 1
+    trap 'rm -f "$temporary"' EXIT
+    trap 'exit 1' INT TERM HUP
+    cat > "$temporary" && chown root:root "$temporary" && chmod "$mode" "$temporary" && mv -f "$temporary" "$target" || {
+        fail "写入文件失败：$target"; return 1;
+    }
+)
+fetch_text() { curl -4fsS --connect-timeout 3 --max-time 8 "$1"; }
+valid_address() {
+    python3 - "$1" <<'PY'
+import ipaddress, sys
+try:
+    ip=ipaddress.ip_address(sys.argv[1])
+    assert not ip.is_unspecified and not ip.is_multicast
+except (ValueError, AssertionError):
+    sys.exit(1)
+PY
+}
+get_public_ip() {
+    local url address
+    for url in https://checkip.amazonaws.com https://api.ipify.org https://ipv4.icanhazip.com; do
+        address=$(fetch_text "$url" 2>/dev/null) || continue
+        address=${address//$'\r'/}; address=${address//$'\n'/}
+        if valid_address "$address"; then printf '%s\n' "$address"; return; fi
+    done
+    echo "无法自动获取公网 IP。" >&2
+    while read -r -p '请输入公网 IPv4/IPv6（留空取消）: ' address; do
+        [ -n "$address" ] || return 1
+        if valid_address "$address"; then printf '%s\n' "$address"; return; fi
+        echo "IP 地址无效。" >&2
+    done
+    return 1
+}
+prepare_metadata() {
+    [ -s "$META_FILE" ] && return 0
+    local address country
+    address=$(get_public_ip) || return 1
+    country=$(fetch_text "https://ipinfo.io/$address/country" 2>/dev/null) || country=Snell
+    country=${country//$'\r'/}; country=${country//$'\n'/}
+    [[ "$country" =~ ^[A-Z]{2}$ ]] || country=Proxy
+    printf '{"address":"%s","name":"%s"}\n' "$address" "$country" | write_file "$META_FILE" 600
+}
 
-# 启动 sing-box
-start_sing_box() {
-    systemctl start "${SERVICE_NAME}"
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}${SERVICE_NAME} 服务成功启动${RESET}"
+# JSON generation and export use a parser, not string substitutions of secrets.
+config_tool() {
+    python3 - "$@" <<'PY'
+import base64, ipaddress, json, os, re, secrets, socket, subprocess, sys, uuid
+from urllib.parse import quote
+
+def read(path):
+    with open(path) as f: return json.load(f)
+def write(path, value):
+    with open(path, 'w') as f: json.dump(value, f, indent=2); f.write('\n')
+    os.chmod(path, 0o600)
+def public_key(private):
+    raw=base64.urlsafe_b64decode(private + '=' * (-len(private) % 4))
+    if len(raw)!=32: raise ValueError('Reality private key must be 32 bytes')
+    der=bytes.fromhex('302e020100300506032b656e04220420')+raw
+    result=subprocess.run(['openssl','pkey','-inform','DER','-pubout','-outform','DER'],input=der,capture_output=True,check=True)
+    return base64.urlsafe_b64encode(result.stdout[-32:]).decode().rstrip('=')
+def choose_port(used):
+    # Probe TCP and UDP, including IPv6 where available; reserve all selected values in this batch.
+    for _ in range(200):
+        port=secrets.randbelow(35000)+30000
+        if port in used: continue
+        sockets=[]
+        try:
+            for family,host in [(socket.AF_INET,'0.0.0.0'),(socket.AF_INET6,'::')]:
+                if family==socket.AF_INET6 and not socket.has_ipv6: continue
+                for kind in (socket.SOCK_STREAM,socket.SOCK_DGRAM):
+                    try: s=socket.socket(family,kind)
+                    except OSError:
+                        if family==socket.AF_INET6: continue
+                        raise
+                    sockets.append(s)
+                    if family==socket.AF_INET6: s.setsockopt(socket.IPPROTO_IPV6,socket.IPV6_V6ONLY,1)
+                    s.bind((host,port))
+            used.add(port)
+            return port
+        except OSError: pass
+        finally:
+            for s in sockets: s.close()
+    raise RuntimeError('Cannot allocate an unused port')
+def listen_address():
+    try:
+        with socket.socket(socket.AF_INET6,socket.SOCK_STREAM) as s: s.bind(('::',0))
+        return '::'
+    except OSError: return '0.0.0.0'
+def make_config(directory, binary):
+    keys=subprocess.run([binary,'generate','reality-keypair'],capture_output=True,text=True,check=True).stdout
+    private=re.search(r'PrivateKey:\s*(\S+)',keys).group(1)
+    public=public_key(private)
+    identity=str(uuid.uuid4()); password=secrets.token_urlsafe(24); used=set()
+    tls={'enabled':True,'certificate_path':directory+'/cert.pem','key_path':directory+'/key.pem'}
+    def inbound(kind,tag): return {'type':kind,'tag':tag,'listen':listen_address(),'listen_port':choose_port(used)}
+    hy=inbound('hysteria2','hysteria-in'); hy.update(users=[{'password':password}],masquerade='https://bing.com',tls=dict(tls,alpn=['h3']))
+    vl=inbound('vless','vless-in'); vl.update(users=[{'uuid':identity,'flow':'xtls-rprx-vision'}],tls={'enabled':True,'server_name':'www.ua.edu','reality':{'enabled':True,'handshake':{'server':'www.ua.edu','server_port':443},'private_key':private,'short_id':['123abc']}})
+    anytls=inbound('anytls','anytls-in'); anytls.update(users=[{'name':identity,'password':public}],tls=tls)
+    ss=inbound('shadowsocks','shadowsocks-in'); ss.update(method='2022-blake3-aes-128-gcm',password=base64.b64encode(secrets.token_bytes(16)).decode(),multiplex={'enabled':True})
+    snell=inbound('snell','snell-in'); snell.update(version=6,psk=secrets.token_urlsafe(36),mode='default')
+    return {'log':{'level':'warn','timestamp':True},'inbounds':[hy,vl,anytls,ss,snell],'outbounds':[{'type':'direct','tag':'direct'}]}
+def migrate(config):
+    inbounds=config.get('inbounds',[])
+    removed={x.get('tag') for x in inbounds if x['type']=='shadowtls'}-{None}
+    config['inbounds']=[x for x in inbounds if x['type']!='shadowtls']
+    # Refuse dangling custom routing rather than silently changing its intent.
+    for rule in config.get('route',{}).get('rules',[]):
+        refs=rule.get('inbound',[]); refs=[refs] if isinstance(refs,str) else refs
+        if removed.intersection(refs): raise ValueError('Custom route references removed ShadowTLS; adjust it first')
+    for x in config['inbounds']:
+        if x.get('tag')=='shadowsocks-in' and x['type']=='shadowsocks':
+            if x.get('listen') in ('127.0.0.1','::1'): x['listen']=listen_address()
+    if not any(x['type']=='snell' for x in config['inbounds']):
+        tags={x.get('tag') for x in config['inbounds']}
+        if 'snell-in' in tags: raise ValueError('snell-in tag already used by another inbound')
+        used={x['listen_port'] for x in config['inbounds'] if 'listen_port' in x}
+        config['inbounds'].append({'type':'snell','tag':'snell-in','listen':listen_address(),'listen_port':choose_port(used),'version':6,'psk':secrets.token_urlsafe(36),'mode':'default'})
+    if config.get('log',{}).get('output')=='stdout': config['log'].pop('output')
+    return config
+
+def export(config,meta):
+    host=str(ipaddress.ip_address(meta['address'])); authority='['+host+']' if ':' in host else host
+    name=str(meta.get('name','Proxy'))
+    name=re.sub(r'[\r\n,=]','_',name)
+    proxies=[]; surge=[]; links=[]
+    for x in config['inbounds']:
+        kind=x['type']; port=x.get('listen_port')
+        if kind not in ('hysteria2','vless','anytls','shadowsocks','snell') or not port: continue
+        tag=x.get('tag',kind); label=name+'-'+tag
+        p={'name':label,'type':kind,'server':host,'port':port}
+        tls=x.get('tls',{}); sni=tls.get('server_name','www.bing.com')
+        if kind=='hysteria2':
+            password=x['users'][0]['password']; p.update(password=password,alpn=tls.get('alpn',['h3']),sni=sni,**{'skip-cert-verify':True})
+            surge.append(f'{label} = hysteria2, {host}, {port}, password={password}, skip-cert-verify=true, sni={sni}')
+            links.append(f'hy2://{quote(password,safe="")}@{authority}:{port}?insecure=1&sni={quote(sni)}#{quote(label)}')
+        elif kind=='vless':
+            user=x['users'][0]; reality=tls['reality']; public=public_key(reality['private_key']); sid=reality.get('short_id',[''])[0]
+            p.update(uuid=user['uuid'],network='tcp',udp=True,tls=True,flow=user.get('flow',''),servername=sni,**{'reality-opts':{'public-key':public,'short-id':sid},'client-fingerprint':'chrome'})
+            links.append(f'vless://{user["uuid"]}@{authority}:{port}?encryption=none&flow={quote(user.get("flow",""))}&security=reality&sni={quote(sni)}&fp=chrome&pbk={public}&sid={sid}&type=tcp#{quote(label)}')
+        elif kind=='anytls':
+            password=x['users'][0]['password']; p.update(password=password,sni=sni,**{'skip-cert-verify':True})
+            surge.append(f'{label} = anytls, {host}, {port}, password={password}, skip-cert-verify=true, sni={sni}')
+            links.append(f'anytls://{quote(password,safe="")}@{authority}:{port}?security=tls&sni={quote(sni)}&allowInsecure=1#{quote(label)}')
+        elif kind=='shadowsocks':
+            p.update(type='ss',cipher=x['method'],password=x['password'],udp=True)
+            surge.append(f'{label} = ss, {host}, {port}, encrypt-method={x["method"]}, password={x["password"]}, udp-relay=true')
+            userinfo=base64.urlsafe_b64encode((x['method']+':'+x['password']).encode()).decode().rstrip('=')
+            links.append(f'ss://{userinfo}@{authority}:{port}#{quote(label)}')
+        else:
+            surge.append(f'{label} = snell, {host}, {port}, psk={x["psk"]}, version={x["version"]}, mode={x.get("mode","default")}, reuse=true')
+            continue  # Snell v6 entry is exported for Surge, not assumed supported by Mihomo.
+        proxies.append(p)
+    return '# Clash / Mihomo: JSON is also valid YAML\n'+json.dumps({'proxies':proxies},ensure_ascii=False,indent=2)+'\n\n# Surge\n'+'\n'.join(surge)+'\n\n# Share links\n'+'\n'.join(links)+'\n'
+try:
+    action=sys.argv[1]
+    if action=='new': write(sys.argv[2],make_config(sys.argv[3],sys.argv[4]))
+    elif action=='migrate': write(sys.argv[3],migrate(read(sys.argv[2])))
+    elif action=='clients':
+        content=export(read(sys.argv[2]),read(sys.argv[3]))
+        with open(sys.argv[4],'w') as f: f.write(content)
+        os.chmod(sys.argv[4],0o600)
+    else: raise ValueError('Unknown operation')
+except Exception as error:
+    # Do not include configuration values or secrets in error messages.
+    print('Configuration operation failed ('+type(error).__name__+'); check configuration structure and dependencies.',file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+show_logs() {
+    if [ "${1:-}" = follow ]; then
+        local result
+        trap ':' INT
+        (trap - INT; if [ "$(get_system_type)" = alpine ]; then exec tail -n 50 -F /var/log/sing-box.log; else exec journalctl -u "$SERVICE_NAME" -f -o cat; fi)
+        result=$?
+        trap 'exit 130' INT
+        [ "$result" -eq 130 ] && return 0
+        return "$result"
+    elif [ "$(get_system_type)" = alpine ]; then tail -n 30 /var/log/sing-box.log
+    else journalctl -u "$SERVICE_NAME" -n 30 --no-pager; fi
+}
+configure_service() {
+    if [ "$(get_system_type)" = alpine ]; then
+        write_file /etc/init.d/sing-box 755 <<EOF || return 1
+#!/sbin/openrc-run
+name="sing-box"
+command="$BINARY"
+command_args="run -c $CONFIG_FILE"
+supervisor="supervise-daemon"
+respawn_delay=3
+respawn_max=5
+respawn_period=60
+output_log="/var/log/sing-box.log"
+error_log="/var/log/sing-box.log"
+rc_ulimit="-n 32768"
+depend() { after net; }
+start_pre() { checkpath --file --mode 0600 --owner root:root /var/log/sing-box.log; }
+EOF
+        mkdir -p /etc/periodic/hourly /var/lib/logrotate || return 1
+        write_file "$CONFIG_DIR/logrotate.conf" 600 <<'EOF' || return 1
+/var/log/sing-box.log {
+    size 1M
+    rotate 3
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su root root
+}
+EOF
+        write_file /etc/periodic/hourly/sing-box-logrotate 755 <<EOF || return 1
+#!/bin/sh
+exec /usr/sbin/logrotate -s /var/lib/logrotate/sing-box.status "$CONFIG_DIR/logrotate.conf"
+EOF
+        rc-update add crond default && rc-update add sing-box default || return 1
+        rc-service crond status >/dev/null 2>&1 || rc-service crond start || return 1
     else
-        echo -e "${RED}${SERVICE_NAME} 服务启动失败${RESET}"
+        write_file /etc/systemd/system/sing-box.service 644 <<EOF || return 1
+[Unit]
+Description=sing-box proxy service
+After=network-online.target
+Wants=network-online.target
+[Service]
+ExecStart=$BINARY run -c $CONFIG_FILE
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=32768
+UMask=0077
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload && systemctl enable sing-box || return 1
     fi
 }
-
-# 停止 sing-box
-stop_sing_box() {
-    systemctl stop "${SERVICE_NAME}"
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}${SERVICE_NAME} 服务成功停止${RESET}"
+validate_config() { "$BINARY" check -c "$CONFIG_FILE"; }
+restart_service() {
+    validate_config || { fail "配置检查失败，未重启服务"; return 1; }
+    service_action restart || return 1
+    sleep 3
+    is_running || { show_logs; fail "服务未保持运行"; return 1; }
+}
+refresh_clients() (
+    local temporary
+    [ -f "$CONFIG_FILE" ] || { fail "服务端配置不存在"; return 1; }
+    prepare_metadata || { fail "客户端地址未设置，可从菜单 7 重试"; return 1; }
+    temporary=$(mktemp "$CONFIG_DIR/.clients.XXXXXX") || return 1
+    trap 'rm -f "$temporary"' EXIT
+    local normalized
+    normalized=$(mktemp "$CONFIG_DIR/.normalized.XXXXXX") || return 1
+    trap 'rm -f "$temporary" "$normalized"' EXIT
+    "$BINARY" format -c "$CONFIG_FILE" > "$normalized" || return 1
+    config_tool clients "$normalized" "$META_FILE" "$temporary" &&
+        chown root:root "$temporary" && chmod 600 "$temporary" && mv -f "$temporary" "$CLIENT_CONFIG_FILE" || return 1
+    cat "$CLIENT_CONFIG_FILE"
+)
+install_or_update() (
+    local operation="${1:-install}" architecture stage extracted
+    architecture=$(get_architecture) || return 1
+    install_dependencies || return 1
+    mkdir -p "$CONFIG_DIR" "$(dirname "$BINARY")" || return 1
+    chown root:root "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR" || return 1
+    stage=$(mktemp -d "$(dirname "$BINARY")/.sing-box-install.XXXXXX") || return 1
+    trap 'rm -rf "$stage"' EXIT
+    trap 'exit 1' INT TERM HUP
+    curl -fL --retry 2 --connect-timeout 10 --max-time 180 "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${architecture}.tar.gz" -o "$stage/release.tar.gz" || return 1
+    tar --no-same-owner -xzf "$stage/release.tar.gz" -C "$stage" "sing-box-${SING_BOX_VERSION}-linux-${architecture}/sing-box" || return 1
+    extracted="$stage/sing-box-${SING_BOX_VERSION}-linux-${architecture}/sing-box"
+    chmod 755 "$extracted" && "$extracted" version || return 1
+    if [ "$operation" = update ]; then
+        [ -f "$CONFIG_FILE" ] || { fail "没有现有配置，请先安装"; return 1; }
+        # sing-box itself accepts JSONC; normalize it with the new core before Python reads it.
+        "$extracted" format -c "$CONFIG_FILE" > "$stage/current.json" || return 1
+        config_tool migrate "$stage/current.json" "$stage/config.json" || return 1
     else
-        echo -e "${RED}${SERVICE_NAME} 服务停止失败${RESET}"
+        if [ -f "$CONFIG_FILE" ]; then fail "已有配置，请使用菜单 8 更新/迁移"; return 1; fi
+        openssl ecparam -genkey -name prime256v1 -out "$stage/key.pem" &&
+            openssl req -new -x509 -days 3650 -key "$stage/key.pem" -out "$stage/cert.pem" -subj /CN=www.bing.com || return 1
+        write_file "$CONFIG_DIR/key.pem" 600 < "$stage/key.pem" && write_file "$CONFIG_DIR/cert.pem" 644 < "$stage/cert.pem" || return 1
+        config_tool new "$stage/config.json" "$CONFIG_DIR" "$extracted" || return 1
     fi
-}
-
-# 重启 sing-box
-restart_sing_box() {
-    systemctl restart "${SERVICE_NAME}"
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}${SERVICE_NAME} 服务成功重启${RESET}"
+    "$extracted" check -c "$stage/config.json" || { fail "新配置检查失败，未替换现有配置和内核"; return 1; }
+    # No binary backup. Failures before this point leave the active binary/configuration intact.
+    write_file "$CONFIG_FILE" 600 < "$stage/config.json" || return 1
+    chown root:root "$extracted" && mv -f "$extracted" "$BINARY" || return 1
+    for private in "$CONFIG_DIR/key.pem" "$CLIENT_CONFIG_FILE" "$META_FILE"; do
+        if [ -f "$private" ]; then chown root:root "$private" && chmod 600 "$private" || return 1; fi
+    done
+    configure_service || return 1
+    restart_service || return 1
+    refresh_clients || { fail "服务已启动，但客户端配置生成失败，可从菜单 7 重试"; return 1; }
+    echo "sing-box 安装/更新成功"
+)
+uninstall_service() {
+    local answer
+    read -r -p '确定卸载 sing-box 并删除配置？[y/N]: ' answer || return 0
+    case "$answer" in y|Y) ;; *) echo "已取消"; return 0;; esac
+    if is_running; then service_action stop || return 1; fi
+    if [ "$(get_system_type)" = alpine ]; then
+        rc-update del sing-box default || return 1
+        # Remove a previously package-installed copy too, so it cannot reappear after reboot.
+        if apk info -e sing-box >/dev/null 2>&1; then apk del sing-box || return 1; fi
+        rm -f /etc/init.d/sing-box /etc/periodic/hourly/sing-box-logrotate /var/lib/logrotate/sing-box.status || return 1
     else
-        echo -e "${RED}${SERVICE_NAME} 服务重启失败${RESET}"
+        systemctl disable sing-box || return 1
+        if dpkg-query -W -f='${Status}' sing-box 2>/dev/null | grep -q 'install ok installed'; then
+            apt-get purge -y sing-box || return 1
+        fi
+        rm -f /etc/systemd/system/sing-box.service && systemctl daemon-reload || return 1
     fi
+    rm -f "$BINARY" && rm -rf "$CONFIG_DIR" || return 1
+    echo "sing-box 卸载成功"
 }
-
-# 查看 sing-box 状态
-status_sing_box() {
-    systemctl status "${SERVICE_NAME}"
-}
-
-# 查看 sing-box 日志
-log_sing_box() {
-    sudo journalctl -u sing-box --output cat -f
-}
-
-
-# 查看 sing-box 配置
-check_sing_box() {
-    if [ -f "${CLIENT_CONFIG_FILE}" ]; then
-        cat "${CLIENT_CONFIG_FILE}"
-    else
-        echo -e "${YELLOW}配置文件不存在: ${CLIENT_CONFIG_FILE}${RESET}"
-    fi
-}
-
-# 显示菜单
 show_menu() {
     clear
-    is_sing_box_installed
-    sing_box_installed=$?
-    is_sing_box_running
-    sing_box_running=$?
-
-    echo -e "${GREEN}=== sing-box 管理工具 ===${RESET}"
-    echo -e "安装状态: $(if [ ${sing_box_installed} -eq 0 ]; then echo -e "${GREEN}已安装${RESET}"; else echo -e "${RED}未安装${RESET}"; fi)"
-    echo -e "运行状态: $(if [ ${sing_box_running} -eq 0 ]; then echo -e "${GREEN}已运行${RESET}"; else echo -e "${RED}未运行${RESET}"; fi)"
-    echo ""
-    echo "1. 安装 sing-box 服务"
-    echo "2. 卸载 sing-box 服务"
-    if [ ${sing_box_installed} -eq 0 ]; then
-        if [ ${sing_box_running} -eq 0 ]; then
-            echo "3. 停止 sing-box 服务"
-        else
-            echo "3. 启动 sing-box 服务"
-        fi
-        echo "4. 重启 sing-box 服务"
-        echo "5. 查看 sing-box 状态"
-        echo "6. 查看 sing-box 日志"
-        echo "7. 查看 sing-box 配置"
-    fi
-    echo "0. 退出"
-    echo -e "${GREEN}=========================${RESET}"
-    read -p "请输入选项编号 (0-7): " choice
-    echo ""
+    echo '=== sing-box 管理工具 ==='
+    if is_installed; then echo '安装状态: 已安装'; else echo '安装状态: 未安装'; fi
+    if is_running; then echo '运行状态: 已运行'; else echo '运行状态: 未运行'; fi
+    printf '%s\n' '1. 安装（Hysteria2 / VLESS / AnyTLS / Shadowsocks / Snell）' '2. 卸载' '3. 启动/停止' '4. 重启' '5. 查看状态' '6. 查看日志' '7. 重新生成并查看客户端配置' '8. 更新内核并迁移协议配置' '0. 退出'
+    read -r -p '请输入选项编号: ' choice
 }
-
-# 捕获 Ctrl+C 信号
-trap 'echo -e "${RED}已取消操作${RESET}"; exit' INT
-
-# 主循环
-check_root
-
-while true; do
-    show_menu
-    case "${choice}" in
-        1)
-            if [ ${sing_box_installed} -eq 0 ]; then
-                echo -e "${YELLOW}sing-box 已经安装！${RESET}"
-            else
-                install_sing_box
-            fi
-            ;;
-        2)
-            if [ ${sing_box_installed} -eq 0 ]; then
-                uninstall_sing_box
-            else
-                echo -e "${YELLOW}sing-box 尚未安装！${RESET}"
-            fi
-            ;;
-        3)
-            if [ ${sing_box_installed} -eq 0 ]; then
-                if [ ${sing_box_running} -eq 0 ]; then
-                    stop_sing_box
-                else
-                    start_sing_box
-                fi
-            else
-                echo -e "${RED}sing-box 尚未安装！${RESET}"
-            fi
-            ;;
-        4)
-            if [ ${sing_box_installed} -eq 0 ]; then
-                restart_sing_box
-            else
-                echo -e "${RED}sing-box 尚未安装！${RESET}"
-            fi
-            ;;
-        5)
-            if [ ${sing_box_installed} -eq 0 ]; then
-                status_sing_box
-            else
-                echo -e "${RED}sing-box 尚未安装！${RESET}"
-            fi
-            ;;
-        6)
-            if [ ${sing_box_installed} -eq 0 ]; then
-                log_sing_box
-            else
-                echo -e "${RED}sing-box 尚未安装！${RESET}"
-            fi
-            ;;
-        7)
-            if [ ${sing_box_installed} -eq 0 ]; then
-                check_sing_box
-            else
-                echo -e "${RED}sing-box 尚未安装！${RESET}"
-            fi
-            ;;
-        0)
-            echo -e "${GREEN}已退出 sing-box 管理工具${RESET}"
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}无效的选项，请输入有效的编号 (0-7)${RESET}"
-            ;;
-    esac
-    read -p "按 Enter 键继续..."
-done
+main() {
+    [ "$(id -u)" -eq 0 ] || { fail "请使用 root"; return 1; }
+    get_system_type >/dev/null || { fail "仅支持 Debian、Ubuntu、Alpine"; return 1; }
+    trap 'exit 130' INT
+    trap 'exit 0' HUP TERM
+    while show_menu; do
+        case "$choice" in
+            1) if is_installed; then echo '已安装，请选择 8 更新/迁移'; else install_or_update install; fi;;
+            2) uninstall_service;;
+            3) if is_running; then service_action stop; else restart_service; fi;;
+            4) restart_service;;
+            5) service_action status;;
+            6) show_logs follow;;
+            7) refresh_clients;;
+            8) install_or_update update;;
+            0) return 0;;
+            *) echo '无效选项';;
+        esac
+        read -r -p '按 Enter 键继续...' || return 0
+    done
+    return 0
+}
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
