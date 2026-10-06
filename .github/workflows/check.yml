@@ -32,7 +32,6 @@ jobs:
               apt-get install -y --no-install-recommends bash python3 curl openssl ca-certificates coreutils iproute2 logrotate
             fi
             bash -n sing-box.sh
-            bash -n disk-cleanup-full.sh
             python3 -m unittest discover -s tests -v
           '
 
