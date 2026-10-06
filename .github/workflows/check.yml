@@ -15,8 +15,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download the same official core used by the installer
         run: |
-          version=$(sed -n 's/^SING_BOX_VERSION="\([^"]*\)"/\1/p' sing-box.sh)
+          source ./sing-box.sh
           mkdir -p "$RUNNER_TEMP/sing-box-core"
+          version=$(latest_release_version amd64 "$RUNNER_TEMP/sing-box-core/release.json")
           curl -fL --retry 2 --connect-timeout 10 --max-time 180 "https://github.com/SagerNet/sing-box/releases/download/v${version}/sing-box-${version}-linux-amd64.tar.gz" -o "$RUNNER_TEMP/sing-box-core/release.tar.gz"
           tar -xzf "$RUNNER_TEMP/sing-box-core/release.tar.gz" -C "$RUNNER_TEMP/sing-box-core" --strip-components=1 "sing-box-${version}-linux-amd64/sing-box"
       - name: Syntax, regression and real proxy traffic
@@ -34,3 +35,4 @@ jobs:
             bash -n disk-cleanup-full.sh
             python3 -m unittest discover -s tests -v
           '
+

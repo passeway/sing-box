@@ -32,6 +32,31 @@ class ManagerTests(unittest.TestCase):
         r=subprocess.run(['bash','-c',self.code+'\n'+self.prefix+code],input=data,text=True,capture_output=True,timeout=8)
         self.assertEqual(r.returncode,status,r.stderr+r.stdout)
         return r
+    def release_fixture(self, version='1.15.0', architecture='amd64'):
+        name=f'sing-box-{version}-linux-{architecture}.tar.gz'
+        return {'tag_name':'v'+version,'draft':False,'prerelease':False,
+                'assets':[{'name':name,'browser_download_url':f'https://github.com/SagerNet/sing-box/releases/download/v{version}/{name}'}]}
+    def resolve_release(self, release, architecture='amd64', status=0):
+        (self.root/'fixture.json').write_text(json.dumps(release))
+        return self.shell('curl() { cp "$CONFIG_DIR/fixture.json" "${@: -1}"; }; '
+                          f'latest_release_version {architecture} "$CONFIG_DIR/release.json"',status=status)
+    def test_latest_release_is_dynamic_for_both_architectures(self):
+        for architecture in ('amd64','arm64'):
+            self.assertEqual(self.resolve_release(self.release_fixture('1.15.0',architecture),architecture).stdout.strip(),'1.15.0')
+    def test_latest_release_rejects_invalid_or_unavailable_assets(self):
+        for field,value in [('prerelease',True),('draft',True),('tag_name','v1.15.0-beta.1'),('tag_name','../../bad'),('assets',[])]:
+            release=self.release_fixture();release[field]=value
+            self.resolve_release(release,status=1)
+        release=self.release_fixture();release['assets'][0]['browser_download_url']='https://example.com/core.tar.gz'
+        self.resolve_release(release,status=1)
+    def test_release_lookup_failure_preserves_installation(self):
+        for name in ('sing-box','config.json'):(self.root/name).write_text('original')
+        r=self.shell('install_dependencies() { :; }; curl() { return 22; }; install_or_update update',status=1)
+        self.assertNotIn('安装/更新成功',r.stdout)
+        for name in ('sing-box','config.json'):self.assertEqual((self.root/name).read_text(),'original')
+        self.assertFalse(list(self.root.glob('.sing-box-install.*')))
+    def test_invalid_release_json_fails(self):
+        self.shell('curl() { printf broken > "${@: -1}"; }; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
     def test_architectures(self):
         for arch,want in [('x86_64','amd64'),('aarch64','arm64')]:
             self.assertEqual(self.shell(f'uname() {{ echo {arch}; }}; get_architecture').stdout.strip(),want)
@@ -170,3 +195,4 @@ class CoreTests(unittest.TestCase):
         subprocess.run([CORE,'check','-c',str(self.root/'migrated.json')],check=True,capture_output=True)
 
 if __name__=='__main__':unittest.main()
+
