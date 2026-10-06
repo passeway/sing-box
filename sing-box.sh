@@ -351,13 +351,24 @@ uninstall_service() {
     echo "sing-box 卸载成功"
 }
 show_menu() {
-    local installed=false running=false
+    local installed=false running=false version='—' version_output core="$BINARY"
     is_installed && installed=true
     is_running && running=true
+    if "$installed"; then
+        version='未知'
+        [ -x "$core" ] || core=$(command -v sing-box)
+        if version_output=$("$core" version 2>/dev/null); then
+            version_output=${version_output%%$'\n'*}
+            if [[ "$version_output" == "sing-box version "* ]]; then
+                version=${version_output#sing-box version }
+            fi
+        fi
+    fi
     clear
     echo '=== sing-box 管理工具 ==='
     if "$installed"; then echo '安装状态: 已安装'; else echo '安装状态: 未安装'; fi
     if "$running"; then echo '运行状态: 已运行'; else echo '运行状态: 未运行'; fi
+    printf '运行版本: %s\n' "$version"
     echo
     echo '1. 安装 sing-box 服务'
     echo '2. 卸载 sing-box 服务'
