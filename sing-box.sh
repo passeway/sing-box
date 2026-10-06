@@ -22,7 +22,7 @@ install_dependencies() {
         debian|ubuntu)
             apt-get update && apt-get -o DPkg::Lock::Timeout=120 install -y curl ca-certificates tar gzip openssl python3 iproute2 || return 1;;
         alpine)
-            apk add --no-cache bash curl ca-certificates tar gzip openssl python3 iproute2 openrc busybox-initscripts logrotate gcompat libstdc++ || return 1;;
+            apk add --no-cache bash curl ca-certificates tar gzip openssl python3 iproute2 openrc busybox-openrc logrotate gcompat libstdc++ || return 1;;
         *) fail "仅支持 Debian、Ubuntu、Alpine"; return 1;;
     esac
 }
