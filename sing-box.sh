@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Debian / Ubuntu / Alpine multi-protocol server manager.
-SING_BOX_VERSION="1.14.2"
 CONFIG_DIR="/etc/sing-box"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 CLIENT_CONFIG_FILE="$CONFIG_DIR/client.txt"
@@ -293,8 +292,36 @@ refresh_clients() (
         chown root:root "$temporary" && chmod 600 "$temporary" && mv -f "$temporary" "$CLIENT_CONFIG_FILE" || return 1
     cat "$CLIENT_CONFIG_FILE"
 )
+latest_release_version() {
+    local architecture="$1" metadata="$2"
+    curl -fsSL --retry 2 --connect-timeout 10 --max-time 30 \
+        https://api.github.com/repos/SagerNet/sing-box/releases/latest -o "$metadata" || {
+        fail "无法获取最新稳定版信息，未替换现有内核和配置" >&2; return 1;
+    }
+    python3 - "$metadata" "$architecture" <<'PYRELEASE'
+import json, re, sys
+try:
+    with open(sys.argv[1]) as source:
+        release = json.load(source)
+    tag = release.get('tag_name', '')
+    if release.get('draft') is not False or release.get('prerelease') is not False:
+        raise ValueError('不是正式发布版本')
+    if not isinstance(tag, str) or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag):
+        raise ValueError('版本号无效')
+    version = tag[1:]
+    name = f'sing-box-{version}-linux-{sys.argv[2]}.tar.gz'
+    url = f'https://github.com/SagerNet/sing-box/releases/download/{tag}/{name}'
+    if not any(a.get('name') == name and a.get('browser_download_url') == url
+               for a in release.get('assets', [])):
+        raise ValueError('缺少当前架构的官方安装包')
+    print(version)
+except (OSError, ValueError, TypeError, AttributeError) as error:
+    print(f'无法解析最新稳定版信息：{error}', file=sys.stderr)
+    sys.exit(1)
+PYRELEASE
+}
 install_or_update() (
-    local operation="${1:-install}" architecture stage extracted
+    local operation="${1:-install}" architecture stage extracted release_version
     architecture=$(get_architecture) || return 1
     install_dependencies || return 1
     mkdir -p "$CONFIG_DIR" "$(dirname "$BINARY")" || return 1
@@ -302,9 +329,11 @@ install_or_update() (
     stage=$(mktemp -d "$(dirname "$BINARY")/.sing-box-install.XXXXXX") || return 1
     trap 'rm -rf "$stage"' EXIT
     trap 'exit 1' INT TERM HUP
-    curl -fL --retry 2 --connect-timeout 10 --max-time 180 "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${architecture}.tar.gz" -o "$stage/release.tar.gz" || return 1
-    tar --no-same-owner -xzf "$stage/release.tar.gz" -C "$stage" "sing-box-${SING_BOX_VERSION}-linux-${architecture}/sing-box" || return 1
-    extracted="$stage/sing-box-${SING_BOX_VERSION}-linux-${architecture}/sing-box"
+    release_version=$(latest_release_version "$architecture" "$stage/release.json") || return 1
+    printf '下载 sing-box 最新稳定版：%s\n' "$release_version"
+    curl -fL --retry 2 --connect-timeout 10 --max-time 180 "https://github.com/SagerNet/sing-box/releases/download/v${release_version}/sing-box-${release_version}-linux-${architecture}.tar.gz" -o "$stage/release.tar.gz" || return 1
+    tar --no-same-owner -xzf "$stage/release.tar.gz" -C "$stage" "sing-box-${release_version}-linux-${architecture}/sing-box" || return 1
+    extracted="$stage/sing-box-${release_version}-linux-${architecture}/sing-box"
     chmod 755 "$extracted" && "$extracted" version || return 1
     if [ "$operation" = update ]; then
         [ -f "$CONFIG_FILE" ] || { fail "没有现有配置，请先安装"; return 1; }
@@ -403,3 +432,4 @@ main() {
     return 0
 }
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
+

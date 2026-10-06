@@ -27,7 +27,7 @@
 
 ## 快速开始
 
-以 **root** 身份运行。当前脚本使用官方 sing-box **1.14.2**。
+以 **root** 身份运行。安装和菜单 `8` 更新时，自动获取官方 sing-box **最新稳定版**。获取失败会终止操作，不回退到固定版本。
 
 ### Debian / Ubuntu
 
@@ -157,3 +157,4 @@ tail -n 50 /var/log/sing-box.log
 [查看源码](sing-box.sh) · [提交问题](https://github.com/passeway/sing-box/issues) · [查看检查结果](https://github.com/passeway/sing-box/actions)
 
 </div>
+
