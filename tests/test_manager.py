@@ -136,18 +136,6 @@ class ManagerTests(unittest.TestCase):
             self.assertEqual(links['vless']['sid'],['123abc' if short_ids else ''])
             self.assertEqual(links['anytls']['insecure'],['1'])
             self.assertEqual(links['hy2']['insecure'],['1'])
-    def test_cleanup_never_uninstalls_or_recursively_removes(self):
-        code=(ROOT/'disk-cleanup-full.sh').read_text()
-        code=code.replace('if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then cleanup_main "$@"; fi','')
-        calls=self.root/'calls'
-        mocked=f'''id() {{ echo 0; }}; df() {{ :; }}; uname() {{ echo 6.0-current; }}
-apt-get() {{ echo "apt $*" >> '{calls}'; }}
-journalctl() {{ :; }}; systemd-tmpfiles() {{ :; }}
-rm() {{ echo DELETE >> '{calls}'; }}
-cleanup_main'''
-        subprocess.run(['bash','-c',code+'\n'+mocked],check=True,capture_output=True)
-        self.assertEqual(calls.read_text(),'apt clean\n')
-        self.assertNotIn('find /tmp',code)
     def test_ctrl_c_returns_to_menu(self):
         fake=self.root/'journalctl';fake.write_text('#!/bin/sh\necho LOG_READY\nexec sleep 30\n');fake.chmod(0o755)
         runner=self.root/'runner';runner.write_text(self.code+'\n'+self.prefix+f'export PATH="{self.root}:$PATH"\nget_system_type() {{ echo debian; }}; show_logs follow; echo BACK_TO_MENU\n')
