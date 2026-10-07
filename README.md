@@ -1,160 +1,190 @@
 <div align="center">
 
-# sing-box
+<h1>sing-box</h1>
 
-### 多协议，一站管理。
+<p><strong>多协议代理，统一部署与管理。</strong></p>
 
-面向 Debian · Ubuntu · Alpine 的轻量级代理服务管理脚本。
+<p>从服务安装到客户端连接，一个脚本完成。</p>
 
-**Hysteria2 · VLESS Reality · AnyTLS · Shadowsocks · Snell**
+<p>
+  <a href="https://github.com/passeway/sing-box/actions/workflows/check.yml"><img src="https://img.shields.io/github/actions/workflow/status/passeway/sing-box/check.yml?branch=main&amp;style=flat-square&amp;label=Checks" alt="Checks"></a>
+  <a href="https://github.com/SagerNet/sing-box/releases/latest"><img src="https://img.shields.io/badge/Core-Latest%20stable-2563eb?style=flat-square" alt="Latest stable sing-box core"></a>
+  <img src="https://img.shields.io/badge/Linux-Debian%20%7C%20Ubuntu%20%7C%20Alpine-475569?style=flat-square" alt="Debian, Ubuntu, Alpine">
+  <img src="https://img.shields.io/badge/Arch-AMD64%20%7C%20ARM64-475569?style=flat-square" alt="AMD64, ARM64">
+</p>
 
-[![Checks](https://github.com/passeway/sing-box/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/passeway/sing-box/actions/workflows/check.yml)
-![Platforms](https://img.shields.io/badge/Linux-Debian%20%7C%20Ubuntu%20%7C%20Alpine-2563eb?style=flat-square)
-![Architecture](https://img.shields.io/badge/Arch-AMD64%20%7C%20ARM64-475569?style=flat-square)
+<p>
+  <a href="#快速开始">快速开始</a> &nbsp;·&nbsp;
+  <a href="#协议与客户端">协议与客户端</a> &nbsp;·&nbsp;
+  <a href="#服务管理">服务管理</a> &nbsp;·&nbsp;
+  <a href="https://github.com/passeway/sing-box/issues">反馈问题</a>
+</p>
 
-[快速开始](#快速开始) · [协议支持](#协议支持) · [日常管理](#日常管理) · [问题反馈](https://github.com/passeway/sing-box/issues)
+<br>
 
 </div>
 
----
+为 Debian、Ubuntu 和 Alpine 提供轻量级 sing-box 管理工具。使用官方内核，自动适配 systemd 与 OpenRC，通过交互菜单完成部署和维护。
 
-从安装、服务管理到客户端配置导出，在一个交互菜单中完成。自动适配 systemd 与 OpenRC，使用官方 sing-box 内核，按当前服务端配置生成连接信息。
-
-| 部署 | 管理 | 连接 | 校验 |
-| :--- | :--- | :--- | :--- |
-| 三种系统，自动适配 | 启停、重启、状态与日志 | 客户端配置与分享链接 | 配置检查与启动结果检测 |
-| 随机端口与凭据生成 | 内核版本更新 | 支持重新生成导出内容 | 三系统 CI 与代理流量测试 |
+- **自动部署** — 安装依赖、分配随机端口、生成连接参数，并配置开机自启。
+- **直接连接** — 导出 Mihomo 节点、Surge 代理行与分享链接，以 `HK`、`US` 等国家或地区代码命名。
+- **持续维护** — 管理服务、查看日志、更新内核，并根据当前服务端配置重新导出节点。
 
 ## 快速开始
 
-以 **root** 身份运行。安装和菜单 `8` 更新时，自动获取官方 sing-box **最新稳定版**。获取失败会终止操作，不回退到固定版本。
+使用 **root** 账户，在 **AMD64 / ARM64** 服务器上运行。安装与更新时自动获取官方 **最新稳定版**；获取失败会终止操作，不回退到固定版本。
 
-### Debian / Ubuntu
+**Debian / Ubuntu**
 
-在已安装 `bash`、`curl` 的终端执行：
+终端需已安装 `bash`、`curl`。
 
 ```bash
-bash <(curl -fsSL sing-box-sigma.vercel.app)
+bash <(curl -fsSL https://sing-box-sigma.vercel.app)
 ```
 
-### Alpine
-
-首次运行先安装命令依赖：
+**Alpine**
 
 ```sh
 apk add --no-cache bash curl ca-certificates
-bash -c 'bash <(curl -fsSL sing-box-sigma.vercel.app)'
+bash -c 'bash <(curl -fsSL https://sing-box-sigma.vercel.app)'
 ```
 
-**运行脚本 → 选择 `1` 安装 → 放行对应端口 → 导入客户端配置。**
+选择菜单 **1** 安装，完成后放行实际生成的端口，再导入客户端配置。重新运行上面的命令即可进入管理菜单。
 
-> [!IMPORTANT]
-> 请在云安全组和服务器防火墙中放行实际生成的端口。Hysteria2 使用 UDP；VLESS Reality、AnyTLS、Snell 使用 TCP；Shadowsocks 使用 TCP，启用 UDP 转发时还需放行同端口 UDP。
+> **端口放行**
+>
+> 云安全组与服务器防火墙均需配置。Hysteria2 使用 UDP；VLESS Reality、AnyTLS、Snell 使用 TCP；Shadowsocks 使用 TCP，启用 UDP 转发时还需放行同端口 UDP。
 
-## 协议支持
+<details>
+<summary>备用入口 · 直接从 GitHub 下载</summary>
 
-下表表示**脚本提供的导出格式**；客户端需使用支持对应协议的版本。
+在已安装 `bash`、`curl` 和 CA 证书的终端执行：
 
-| 协议 | 配置特点 | Clash / Mihomo | Surge | 分享链接 |
+```sh
+curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/main/sing-box.sh -o /tmp/sing-box-manager.sh &&
+bash /tmp/sing-box-manager.sh
+```
+
+</details>
+
+## 协议与客户端
+
+一次安装配置五种协议。下表表示**脚本提供的导出格式**，客户端需使用支持对应协议的版本。
+
+| 协议 | 默认方案 | Mihomo | Surge | 分享链接 |
 | :--- | :--- | :---: | :---: | :---: |
-| **Hysteria2** | QUIC · 自签名 TLS · 单 UDP 端口 | ✓ | ✓ | ✓ |
-| **VLESS Reality** | Reality · Vision · TCP | ✓ | — | ✓ |
-| **AnyTLS** | TLS · TCP | ✓ | ✓ | ✓ |
-| **Shadowsocks** | 独立入站 · `2022-blake3-aes-128-gcm` | ✓ | ✓ | ✓ |
-| **Snell** | v6 · `mode=default` · 独立随机 PSK | — | ✓ | — |
+| **Hysteria2** | QUIC · 单 UDP 端口 | ✓ | ✓ | ✓ |
+| **VLESS Reality** | TCP · Vision | ✓ | — | ✓ |
+| **AnyTLS** | TCP · TLS | ✓ | ✓ | ✓ |
+| **Shadowsocks 2022** | `2022-blake3-aes-128-gcm` | ✓ | ✓ | ✓ |
+| **Snell v6** | 原生入站 · `mode=default` | — | ✓ | — |
 
-- **AnyTLS** 按项目约定复用 Reality 公钥作为密码。
-- **Hysteria2** 当前使用单端口，未自动配置端口跳跃。
-- **Snell** 使用 sing-box 原生入站，需要 1.14 或更新版本的内核。
+### 导入节点
 
-### 客户端导入
+**Mihomo** — 将导出的 `proxies` 节点合并到自己的配置中。输出使用 JSON 表示，也属于合法 YAML。
 
-| 客户端 | 使用方式 |
-| :--- | :--- |
-| **v2rayN** | 复制对应协议的分享链接导入；客户端内核需支持该协议 |
-| **Clash / Mihomo** | 使用导出内容中的 `proxies` 节点；该部分为 JSON 格式，也属于合法 YAML |
-| **Surge** | 复制对应的代理行，放入配置的 `[Proxy]` 部分 |
+**Surge** — 将对应代理行加入配置文件的 `[Proxy]` 部分。
 
-不同格式请分开复制，导出内容不是一份可整体导入所有客户端的配置。节点名称包含协议或入站标签，方便区分。
+**v2rayN 等客户端** — 复制相应的分享链接，导入支持该协议的客户端及内核。
 
-> [!NOTE]
-> Hysteria2 与 AnyTLS 默认使用自签名证书。导出条目包含相应的 `skip-cert-verify` / `insecure=1` 设置；手动编辑时需保持一致。VLESS Reality 的 short-id 必须与服务端匹配。
+每种格式请分开复制。导出内容包含节点信息，需要与客户端已有的规则和策略组配置配合使用。
 
-## 日常管理
+<details>
+<summary>默认配置与连接说明</summary>
 
-重新运行安装命令即可打开管理菜单。未安装时只显示安装、卸载和退出；安装后显示完整管理选项。
+- **Hysteria2 / AnyTLS** 使用自签名证书。导出配置包含 `skip-cert-verify` 或 `insecure=1`，客户端会跳过证书验证；如改用受信任证书，请同步调整客户端设置。
+- **VLESS Reality** 的公钥、short-id、SNI 和 flow 必须与服务端一致。
+- **AnyTLS** 当前复用 Reality 公钥作为密码。
+- **Hysteria2** 当前采用单端口配置，不自动设置端口跳跃。
+- **Snell v6** 使用 sing-box 原生入站，需要 1.14 或更新版本的内核，以及支持 Snell v6 的客户端。
+- **节点名称** 使用国家或地区代码加上入站标签，例如 `HK-vless-in`；地区识别失败时使用 `Proxy` 前缀。
+
+</details>
+
+## 服务管理
+
+菜单顶部显示安装状态、运行状态和运行版本。常用操作：**3** 启停、**4** 重启、**6** 日志、**7** 导出节点、**8** 更新内核。
+
+修改服务端配置后，选择 **4** 重启，再选择 **7** 重新导出。修改公网地址或节点前缀后，选择 **7** 更新客户端内容。
+
+<details>
+<summary>完整菜单</summary>
+
+未安装时显示安装、卸载与退出；安装后显示完整菜单。
 
 | 选项 | 操作 |
 | :---: | :--- |
-| `1` | 安装 sing-box 服务 |
-| `2` | 卸载 sing-box 服务，需要明确输入 `y` |
-| `3` | 按当前状态显示启动或停止 |
-| `4` | 重启服务，并检查配置与运行状态 |
+| `1` | 安装 sing-box |
+| `2` | 卸载服务并删除配置，需输入 `y` 确认 |
+| `3` | 按当前状态启动或停止服务 |
+| `4` | 校验配置并重启，检查运行状态 |
 | `5` | 查看服务状态 |
-| `6` | 查看实时日志，按 `Ctrl+C` 返回菜单 |
-| `7` | 根据当前服务端配置重新生成并查看客户端配置 |
-| `8` | 更新 sing-box 内核 |
+| `6` | 查看实时日志，按 `Ctrl+C` 返回 |
+| `7` | 根据当前服务端配置重新生成并查看节点 |
+| `8` | 更新内核并迁移配置 |
 | `0` | 退出 |
 
-### 常用路径
+</details>
+
+<details>
+<summary>配置文件与安装位置</summary>
 
 | 路径 | 用途 |
 | :--- | :--- |
-| `/usr/local/bin/sing-box` | 脚本安装的内核 |
+| `/usr/local/bin/sing-box` | 服务端程序 |
 | `/etc/sing-box/config.json` | 服务端配置 |
-| `/etc/sing-box/client.txt` | 生成的客户端配置与分享链接 |
+| `/etc/sing-box/client.txt` | 客户端节点与分享链接 |
 | `/etc/sing-box/client-meta.json` | 公网地址与节点名称前缀 |
 
-修改公网地址或节点前缀后，选择 **7** 重新导出；修改服务端配置后，选择 **4** 重启生效。
+</details>
 
-## 排查问题
+<details>
+<summary>更新与迁移</summary>
 
-先检查配置，再查看对应系统的日志：
+菜单 **8** 获取官方最新稳定版，并检查当前架构的安装包是否存在；版本信息获取失败时终止操作。旧配置迁移会移除 ShadowTLS，必要时将旧 Shadowsocks 入站从回环监听改为对外监听，并在缺少 Snell 时补充入站。
+
+新配置通过校验后才会写入并替换内核。脚本不自动备份或回滚；有自定义配置时，请先保存备份。若自定义路由仍引用被移除的 ShadowTLS，迁移会停止并提示调整。
+
+</details>
+
+## 排障与反馈
+
+连接异常时，先确认服务状态、端口放行与客户端参数，再查看日志。
+
+<details>
+<summary>检查配置与服务日志</summary>
+
+**配置校验**
 
 ```bash
 /usr/local/bin/sing-box check -c /etc/sing-box/config.json
 ```
 
-<details>
-<summary><strong>Debian / Ubuntu · systemd</strong></summary>
+**Debian / Ubuntu**
 
 ```bash
 systemctl status sing-box --no-pager
 journalctl -u sing-box -n 50 --no-pager
 ```
 
-</details>
-
-<details>
-<summary><strong>Alpine · OpenRC</strong></summary>
+**Alpine**
 
 ```sh
 rc-service sing-box status
 tail -n 50 /var/log/sing-box.log
 ```
 
-日志每小时检查一次，超过 1 MiB 时轮转，保留 3 份压缩归档。检查间隔内仍可能增长；`copytruncate` 存在短暂的复制与截断丢日志窗口。
+Alpine 日志每小时检查一次，超过 1 MiB 时轮转，保留 3 份压缩归档。检查间隔内日志仍可能增长；`copytruncate` 在复制与截断之间存在短暂的丢日志窗口。
 
 </details>
 
-| 现象 | 优先检查 |
-| :--- | :--- |
-| 自签名证书验证失败 | 客户端是否保留 `insecure=1` 或跳过证书验证设置 |
-| VLESS Reality 无法连接 | 公钥、short-id、SNI、flow 是否与服务端一致 |
-| Hysteria2 连接超时 | UDP 端口放行情况及客户端错误日志 |
-| 修改后仍使用旧节点信息 | 选择菜单 `7`，重新导入生成的配置 |
-| 启动提示端口占用 | 是否存在其他服务或手动启动的第二个 sing-box 实例 |
+提交 [Issue](https://github.com/passeway/sing-box/issues) 时，请提供系统与架构、内核与客户端版本、复现步骤及相关日志，并隐藏密码、PSK 和私钥。
 
-反馈问题时请提供系统、客户端及内核版本、相关错误日志，并隐藏密码、PSK 和私钥。
-
+[自动检查](https://github.com/passeway/sing-box/actions/workflows/check.yml) 使用 Debian、Ubuntu 与 Alpine 容器，官方内核测试采用 AMD64 构建。真实 VPS 的开机自启、ARM64 实机运行及外网连通性仍需在实际环境验证。
 
 ---
 
-<div align="center">
-
-基于 [SagerNet/sing-box](https://github.com/SagerNet/sing-box) 构建 · 本仓库为独立管理脚本项目
-
-[查看源码](sing-box.sh) · [提交问题](https://github.com/passeway/sing-box/issues) · [查看检查结果](https://github.com/passeway/sing-box/actions)
-
-</div>
-
+<p align="center">
+  基于 <a href="https://github.com/SagerNet/sing-box">SagerNet/sing-box</a> 官方内核 · 独立部署与管理脚本<br>
+  <a href="sing-box.sh">查看源码</a> &nbsp;·&nbsp; <a href="https://github.com/passeway/sing-box/issues">问题反馈</a>
+</p>
