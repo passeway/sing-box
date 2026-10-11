@@ -82,7 +82,7 @@ prepare_metadata() {
 # JSON generation and export use a parser, not string substitutions of secrets.
 config_tool() {
     python3 - "$@" <<'PY'
-import base64, ipaddress, json, os, re, secrets, socket, subprocess, sys, uuid
+import base64, errno, ipaddress, json, os, re, secrets, socket, subprocess, sys, uuid
 from urllib.parse import quote
 
 def read(path):
@@ -106,13 +106,19 @@ def choose_port(used):
             for family,host in [(socket.AF_INET,'0.0.0.0'),(socket.AF_INET6,'::')]:
                 if family==socket.AF_INET6 and not socket.has_ipv6: continue
                 for kind in (socket.SOCK_STREAM,socket.SOCK_DGRAM):
-                    try: s=socket.socket(family,kind)
-                    except OSError:
-                        if family==socket.AF_INET6: continue
+                    try:
+                        s=socket.socket(family,kind)
+                        sockets.append(s)
+                        if family==socket.AF_INET6: s.setsockopt(socket.IPPROTO_IPV6,socket.IPV6_V6ONLY,1)
+                        s.bind((host,port))
+                    except OSError as error:
+                        # IPv6 may be compiled in but disabled by the host. A busy
+                        # IPv6 port must still reject this candidate on dual-stack hosts.
+                        if family==socket.AF_INET6 and error.errno in (
+                            errno.EAFNOSUPPORT, errno.EPROTONOSUPPORT, errno.EADDRNOTAVAIL,
+                            errno.ENODEV):
+                            continue
                         raise
-                    sockets.append(s)
-                    if family==socket.AF_INET6: s.setsockopt(socket.IPPROTO_IPV6,socket.IPV6_V6ONLY,1)
-                    s.bind((host,port))
             used.add(port)
             return port
         except OSError: pass
@@ -127,13 +133,12 @@ def listen_address():
 def make_config(directory, binary):
     keys=subprocess.run([binary,'generate','reality-keypair'],capture_output=True,text=True,check=True).stdout
     private=re.search(r'PrivateKey:\s*(\S+)',keys).group(1)
-    public=public_key(private)
     identity=str(uuid.uuid4()); password=secrets.token_urlsafe(24); used=set()
     tls={'enabled':True,'certificate_path':directory+'/cert.pem','key_path':directory+'/key.pem'}
     def inbound(kind,tag): return {'type':kind,'tag':tag,'listen':listen_address(),'listen_port':choose_port(used)}
     hy=inbound('hysteria2','hysteria-in'); hy.update(users=[{'password':password}],masquerade='https://bing.com',tls=dict(tls,alpn=['h3']))
     vl=inbound('vless','vless-in'); vl.update(users=[{'uuid':identity,'flow':'xtls-rprx-vision'}],tls={'enabled':True,'server_name':'www.ua.edu','reality':{'enabled':True,'handshake':{'server':'www.ua.edu','server_port':443},'private_key':private,'short_id':['123abc']}})
-    anytls=inbound('anytls','anytls-in'); anytls.update(users=[{'name':identity,'password':public}],tls=tls)
+    anytls=inbound('anytls','anytls-in'); anytls.update(users=[{'name':identity,'password':secrets.token_urlsafe(32)}],tls=tls)
     ss=inbound('shadowsocks','shadowsocks-in'); ss.update(method='2022-blake3-aes-128-gcm',password=base64.b64encode(secrets.token_bytes(16)).decode(),multiplex={'enabled':True})
     snell=inbound('snell','snell-in'); snell.update(version=6,psk=secrets.token_urlsafe(36),mode='default')
     return {'log':{'level':'warn','timestamp':True},'inbounds':[hy,vl,anytls,ss,snell],'outbounds':[{'type':'direct','tag':'direct'}]}
@@ -153,6 +158,15 @@ def migrate(config):
         if 'snell-in' in tags: raise ValueError('snell-in tag already used by another inbound')
         used={x['listen_port'] for x in config['inbounds'] if 'listen_port' in x}
         config['inbounds'].append({'type':'snell','tag':'snell-in','listen':listen_address(),'listen_port':choose_port(used),'version':6,'psk':secrets.token_urlsafe(36),'mode':'default'})
+    # Only rotate the legacy public-key password; preserve independent user passwords.
+    public_keys={public_key(x['tls']['reality']['private_key']) for x in config['inbounds']
+                 if x.get('tls',{}).get('reality',{}).get('private_key')}
+    for x in config['inbounds']:
+        if x['type']=='anytls':
+            for user in x.get('users',[]):
+                if user.get('password') in public_keys:
+                    user['password']=secrets.token_urlsafe(32)
+                    print('旧 AnyTLS 密码复用了 Reality 公钥，更新成功后请重新导入 AnyTLS 节点。',file=sys.stderr)
     if config.get('log',{}).get('output')=='stdout': config['log'].pop('output')
     return config
 
@@ -183,7 +197,10 @@ def export(config,meta):
         elif kind=='shadowsocks':
             p.update(type='ss',cipher=x['method'],password=x['password'],udp=True)
             surge.append(f'{label} = ss, {host}, {port}, encrypt-method={x["method"]}, password={x["password"]}, udp-relay=true')
-            userinfo=base64.urlsafe_b64encode((x['method']+':'+x['password']).encode()).decode().rstrip('=')
+            if x['method'].startswith('2022-'):
+                userinfo=quote(x['method'],safe='')+':'+quote(x['password'],safe='')
+            else:
+                userinfo=base64.urlsafe_b64encode((x['method']+':'+x['password']).encode()).decode().rstrip('=')
             links.append(f'ss://{userinfo}@{authority}:{port}#{quote(label)}')
         else:
             surge.append(f'{label} = snell, {host}, {port}, psk={x["psk"]}, version={x["version"]}, mode={x.get("mode","default")}, reuse=true')
@@ -320,6 +337,77 @@ except (OSError, ValueError, TypeError, AttributeError) as error:
     sys.exit(1)
 PYRELEASE
 }
+# Snapshot the files an update may replace. Keep recovery data if restoration fails.
+managed_service_files() {
+    if [ "$(get_system_type)" = alpine ]; then
+        printf '%s\n' /etc/init.d/sing-box /etc/periodic/hourly/sing-box-logrotate
+    else printf '%s\n' /etc/systemd/system/sing-box.service; fi
+}
+service_enabled() {
+    if [ "$(get_system_type)" = alpine ]; then [ -e /etc/runlevels/default/sing-box ]
+    else systemctl is-enabled --quiet "$SERVICE_NAME"; fi
+}
+restore_autostart() {
+    if [ "$(get_system_type)" = alpine ]; then
+        if [ "$1" = true ]; then rc-update add "$SERVICE_NAME" default
+        elif service_enabled; then rc-update del "$SERVICE_NAME" default; fi
+    elif [ "$1" = true ]; then systemctl enable "$SERVICE_NAME"
+    else systemctl disable "$SERVICE_NAME"; fi
+}
+commit_update() (
+    local stage="$1" extracted="$2" backup path index=0 dirty=false restart_attempted=false
+    local was_running=false was_enabled=false service_touched=false
+    local -a paths=("$CONFIG_FILE" "$BINARY" "$CONFIG_DIR/logrotate.conf")
+    while IFS= read -r path; do paths+=("$path"); done < <(managed_service_files)
+    backup="$stage/rollback"
+    mkdir -m 700 "$backup" || return 1
+    is_running && was_running=true
+    service_enabled && was_enabled=true
+    for path in "${paths[@]}"; do
+        printf '%s\t%s\n' "$index" "$path" >> "$backup/manifest.txt" || return 1
+        if [ -e "$path" ] || [ -L "$path" ]; then
+            cp -a "$path" "$backup/$index" || return 1
+        fi
+        index=$((index+1))
+    done
+    rollback_update() {
+        local result="$?" failed=false target temporary i=0
+        trap - EXIT INT TERM HUP
+        if "$dirty"; then
+            if "$restart_attempted"; then service_action stop || failed=true; fi
+            for target in "${paths[@]}"; do
+                if [ -e "$backup/$i" ] || [ -L "$backup/$i" ]; then
+                    temporary="${target}.rollback.$$"
+                    if cp -a "$backup/$i" "$temporary" && mv -f "$temporary" "$target"; then :
+                    else rm -f "$temporary"; failed=true; fi
+                else rm -f "$target" || failed=true; fi
+                i=$((i+1))
+            done
+            if "$service_touched"; then
+                if [ "$(get_system_type)" != alpine ]; then systemctl daemon-reload || failed=true; fi
+                restore_autostart "$was_enabled" || failed=true
+            fi
+            if "$restart_attempted" && "$was_running"; then
+                restart_service || failed=true
+            fi
+            if "$failed"; then
+                touch "$stage/KEEP"
+                fail "自动恢复未完全成功，恢复文件保留在 $backup；请检查服务状态"
+            else fail "更新失败，已恢复原内核、配置和服务状态"; fi
+        fi
+        return "$result"
+    }
+    trap rollback_update EXIT
+    trap 'exit 1' INT TERM HUP
+    dirty=true
+    write_file "$CONFIG_FILE" 600 < "$stage/config.json" || return 1
+    chown root:root "$extracted" && mv -f "$extracted" "$BINARY" || return 1
+    service_touched=true
+    configure_service || return 1
+    restart_attempted=true
+    restart_service || return 1
+    dirty=false
+)
 install_or_update() (
     local operation="${1:-install}" architecture stage extracted release_version
     architecture=$(get_architecture) || return 1
@@ -327,7 +415,7 @@ install_or_update() (
     mkdir -p "$CONFIG_DIR" "$(dirname "$BINARY")" || return 1
     chown root:root "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR" || return 1
     stage=$(mktemp -d "$(dirname "$BINARY")/.sing-box-install.XXXXXX") || return 1
-    trap 'rm -rf "$stage"' EXIT
+    trap '[ -f "$stage/KEEP" ] || rm -rf "$stage"' EXIT
     trap 'exit 1' INT TERM HUP
     release_version=$(latest_release_version "$architecture" "$stage/release.json") || return 1
     printf '下载 sing-box 最新稳定版：%s\n' "$release_version"
@@ -348,14 +436,17 @@ install_or_update() (
         config_tool new "$stage/config.json" "$CONFIG_DIR" "$extracted" || return 1
     fi
     "$extracted" check -c "$stage/config.json" || { fail "新配置检查失败，未替换现有配置和内核"; return 1; }
-    # No binary backup. Failures before this point leave the active binary/configuration intact.
-    write_file "$CONFIG_FILE" 600 < "$stage/config.json" || return 1
-    chown root:root "$extracted" && mv -f "$extracted" "$BINARY" || return 1
+    if [ "$operation" = update ]; then
+        commit_update "$stage" "$extracted" || return 1
+    else
+        write_file "$CONFIG_FILE" 600 < "$stage/config.json" || return 1
+        chown root:root "$extracted" && mv -f "$extracted" "$BINARY" || return 1
+        configure_service || return 1
+        restart_service || return 1
+    fi
     for private in "$CONFIG_DIR/key.pem" "$CLIENT_CONFIG_FILE" "$META_FILE"; do
         if [ -f "$private" ]; then chown root:root "$private" && chmod 600 "$private" || return 1; fi
     done
-    configure_service || return 1
-    restart_service || return 1
     refresh_clients || { fail "服务已启动，但客户端配置生成失败，可从菜单 7 重试"; return 1; }
     echo "sing-box 安装/更新成功"
 )
@@ -432,4 +523,5 @@ main() {
     return 0
 }
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
+
 

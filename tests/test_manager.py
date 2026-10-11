@@ -161,19 +161,111 @@ class ManagerTests(unittest.TestCase):
             block=SOURCE.split(marker,1)[1].split('\nEOF',1)[0]
             subprocess.run(['sh','-n'],input=marker+block,text=True,check=True)
 
+    def test_ipv6_disabled_falls_back_but_busy_port_is_rejected(self):
+        import errno
+        real_socket=socket.socket
+        class IPv6Socket:
+            def setsockopt(self,*args): pass
+            def bind(self,*args): raise OSError(error,'fixture')
+            def close(self): pass
+        def factory(family,*args,**kwargs):
+            return IPv6Socket() if family==socket.AF_INET6 else real_socket(family,*args,**kwargs)
+        for error in (errno.EADDRNOTAVAIL,errno.EAFNOSUPPORT,errno.ENODEV):
+            with patch.object(socket,'socket',factory),patch.object(socket,'has_ipv6',True):
+                self.assertGreaterEqual(NS['choose_port'](set()),30000)
+        for error in (errno.EADDRINUSE,errno.EACCES):
+            with patch.object(socket,'socket',factory),patch.object(socket,'has_ipv6',True):
+                with self.assertRaises(RuntimeError): NS['choose_port'](set())
+    def test_ss2022_uri_uses_percent_encoded_credentials(self):
+        from urllib.parse import urlsplit,unquote
+        import base64
+        for method in ('2022-blake3-aes-128-gcm','2022-blake3-aes-256-gcm','aes-128-gcm'):
+            password='a+b/c=='
+            c={'inbounds':[{'type':'shadowsocks','listen_port':42000,'method':method,'password':password}]}
+            out=NS['export'](c,{'address':'2001:db8::1'})
+            link=next(line for line in out.splitlines() if line.startswith('ss://'))
+            uri=urlsplit(link)
+            self.assertEqual(uri.hostname,'2001:db8::1')
+            if method.startswith('2022-'):
+                self.assertEqual(unquote(uri.username),method)
+                self.assertEqual(unquote(uri.password),password)
+                self.assertIn('a%2Bb%2Fc%3D%3D',link)
+            else:
+                raw=uri.username+'='*(-len(uri.username)%4)
+                self.assertEqual(base64.urlsafe_b64decode(raw).decode(),method+':'+password)
+    def test_only_legacy_anytls_password_is_rotated(self):
+        c={'inbounds':[{'type':'vless','tls':{'reality':{'private_key':'fixture'}}},
+           {'type':'anytls','users':[{'password':'public-key'},{'password':'independent'}]},
+           {'type':'snell'}]}
+        with patch.dict(NS,{'public_key':lambda _: 'public-key'}),contextlib.redirect_stderr(io.StringIO()) as output:
+            migrated=NS['migrate'](copy.deepcopy(c))
+            self.assertNotEqual(migrated['inbounds'][1]['users'][0]['password'],'public-key')
+            self.assertEqual(migrated['inbounds'][1]['users'][1]['password'],'independent')
+            self.assertEqual(NS['migrate'](copy.deepcopy(migrated)),migrated)
+        self.assertIn('重新导入',output.getvalue())
+    def transaction(self, failure='', running=True, status=1):
+        stage=self.root/'stage';stage.mkdir()
+        (stage/'config.json').write_text('new config')
+        (stage/'core').write_text('new binary')
+        (self.root/'config.json').write_text('old config')
+        (self.root/'sing-box').write_text('old binary')
+        (self.root/'service').write_text('old service')
+        (self.root/'state').write_text('running' if running else 'stopped')
+        code = r'''managed_service_files() { echo "$CONFIG_DIR/service"; }
+get_system_type() { echo debian; }
+service_enabled() { return 1; }
+restore_autostart() { echo "$1" > "$CONFIG_DIR/enabled"; }
+systemctl() { :; }
+is_running() { [ "$(cat "$CONFIG_DIR/state")" = running ]; }
+service_action() { echo stopped > "$CONFIG_DIR/state"; }
+configure_service() { echo new > "$CONFIG_DIR/service"; echo rotation > "$CONFIG_DIR/logrotate.conf"; }
+restart_service() { echo running > "$CONFIG_DIR/state"; }
+'''+failure+'\ncommit_update "$CONFIG_DIR/stage" "$CONFIG_DIR/stage/core"'
+        return self.shell(code,status=status)
+    def assert_restored(self, running):
+        self.assertEqual((self.root/'config.json').read_text(),'old config')
+        self.assertEqual((self.root/'sing-box').read_text(),'old binary')
+        self.assertEqual((self.root/'service').read_text(),'old service')
+        self.assertFalse((self.root/'logrotate.conf').exists())
+        self.assertEqual((self.root/'state').read_text().strip(),'running' if running else 'stopped')
+    def test_binary_replace_failure_restores_config(self):
+        self.transaction(r'''touch "$CONFIG_DIR/fail-once"
+mv() { if [ "${@: -1}" = "$BINARY" ] && [ -f "$CONFIG_DIR/fail-once" ]; then rm "$CONFIG_DIR/fail-once"; return 1; fi; command mv "$@"; }''')
+        self.assert_restored(True)
+    def test_service_configuration_failure_restores_files(self):
+        self.transaction('configure_service() { echo new > "$CONFIG_DIR/service"; return 1; }')
+        self.assert_restored(True)
+    def test_restart_failure_restores_running_service(self):
+        self.transaction(r'''restart_service() { if [ "$(cat "$BINARY")" = 'new binary' ]; then echo stopped > "$CONFIG_DIR/state"; return 1; fi; echo running > "$CONFIG_DIR/state"; }''')
+        self.assert_restored(True)
+    def test_restart_failure_preserves_stopped_state(self):
+        self.transaction('restart_service() { echo running > "$CONFIG_DIR/state"; return 1; }',running=False)
+        self.assert_restored(False)
+    def test_rollback_failure_keeps_recovery_files(self):
+        self.transaction('configure_service() { return 1; }; mv() { case "$1 $2" in *.rollback.*) return 1;; esac; command mv "$@"; }')
+        self.assertTrue((self.root/'stage/KEEP').exists())
+        self.assertEqual((self.root/'stage/rollback/0').read_text(),'old config')
+    def test_success_commits_pair(self):
+        self.transaction(status=0)
+        self.assertEqual((self.root/'config.json').read_text(),'new config')
+        self.assertEqual((self.root/'sing-box').read_text(),'new binary')
+        self.assertFalse((self.root/'stage/KEEP').exists())
+
 @unittest.skipUnless(CORE and Path(CORE).exists(),'set SING_BOX_TEST_BINARY to run real core tests')
 class CoreTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup); self.root=Path(self.tmp.name)
         subprocess.run(['openssl','req','-x509','-newkey','ec','-pkeyopt','ec_paramgen_curve:prime256v1','-nodes','-keyout',str(self.root/'key.pem'),'-out',str(self.root/'cert.pem'),'-days','1','-subj','/CN=www.bing.com'],check=True,capture_output=True)
         self.config=NS['make_config'](str(self.root),CORE)
-    def test_real_generated_config_and_key_reuse(self):
+    def test_real_generated_config_and_independent_password(self):
         p=self.root/'config.json';NS['write'](p,self.config)
         subprocess.run([CORE,'check','-c',str(p)],check=True,capture_output=True)
         types={x['type'] for x in self.config['inbounds']}
         self.assertEqual(types,{'hysteria2','vless','anytls','shadowsocks','snell'})
         vl=self.config['inbounds'][1];anytls=self.config['inbounds'][2]
-        self.assertEqual(anytls['users'][0]['password'],NS['public_key'](vl['tls']['reality']['private_key']))
+        self.assertNotEqual(anytls['users'][0]['password'],NS['public_key'](vl['tls']['reality']['private_key']))
+        self.assertNotEqual(anytls['users'][0]['password'],self.config['inbounds'][0]['users'][0]['password'])
+        self.assertGreaterEqual(len(anytls['users'][0]['password']),43)
         self.assertEqual(len({x['listen_port'] for x in self.config['inbounds']}),5)
     def test_real_migrated_config(self):
         c=copy.deepcopy(self.config);c['inbounds']=[x for x in c['inbounds'] if x['type']!='snell']
@@ -183,4 +275,5 @@ class CoreTests(unittest.TestCase):
         subprocess.run([CORE,'check','-c',str(self.root/'migrated.json')],check=True,capture_output=True)
 
 if __name__=='__main__':unittest.main()
+
 

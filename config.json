@@ -59,7 +59,7 @@
       "users": [
         {
           "name": "REPLACE_WITH_UUID",
-          "password": "REPLACE_WITH_REALITY_PUBLIC_KEY"
+          "password": "REPLACE_WITH_RANDOM_ANYTLS_PASSWORD"
         }
       ],
       "tls": {
@@ -96,3 +96,4 @@
     }
   ]
 }
+
