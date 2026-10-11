@@ -49,6 +49,8 @@ apk add --no-cache bash curl ca-certificates
 bash -c 'bash <(curl -fsSL https://sing-box-sigma.vercel.app)'
 ```
 
+IPv6 可用时使用双栈；系统不支持或已禁用 IPv6 时回退到 IPv4，不修改系统网络设置。
+
 选择菜单 **1** 安装，完成后放行实际生成的端口，再导入客户端配置。重新运行上面的命令即可进入管理菜单。
 
 > **端口放行**
@@ -94,7 +96,7 @@ bash /tmp/sing-box-manager.sh
 
 - **Hysteria2 / AnyTLS** 使用自签名证书。导出配置包含 `skip-cert-verify` 或 `insecure=1`，客户端会跳过证书验证；如改用受信任证书，请同步调整客户端设置。
 - **VLESS Reality** 的公钥、short-id、SNI 和 flow 必须与服务端一致。
-- **AnyTLS** 当前复用 Reality 公钥作为密码。
+- **AnyTLS** 新安装使用独立随机密码。
 - **Hysteria2** 当前采用单端口配置，不自动设置端口跳跃。
 - **Snell v6** 使用 sing-box 原生入站，需要 1.14 或更新版本的内核，以及支持 Snell v6 的客户端。
 - **节点名称** 使用国家或地区代码加上入站标签，例如 `HK-vless-in`；地区识别失败时使用 `Proxy` 前缀。
@@ -121,7 +123,7 @@ bash /tmp/sing-box-manager.sh
 | `5` | 查看服务状态 |
 | `6` | 查看实时日志，按 `Ctrl+C` 返回 |
 | `7` | 根据当前服务端配置重新生成并查看节点 |
-| `8` | 更新内核并迁移配置 |
+| `8` | 更新内核，保留现有配置 |
 | `0` | 退出 |
 
 </details>
@@ -139,11 +141,11 @@ bash /tmp/sing-box-manager.sh
 </details>
 
 <details>
-<summary>更新与迁移</summary>
+<summary>内核更新</summary>
 
-菜单 **8** 获取官方最新稳定版，并检查当前架构的安装包是否存在；版本信息获取失败时终止操作。旧配置迁移会移除 ShadowTLS，必要时将旧 Shadowsocks 入站从回环监听改为对外监听，并在缺少 Snell 时补充入站。
+菜单 **8** 获取官方最新稳定版，并检查当前架构的安装包是否存在；版本信息获取失败时终止操作。更新时原样保留配置，不增删协议、不修改端口或密码，也不执行历史配置迁移。
 
-新配置通过校验后才会写入并替换内核。脚本不自动备份或回滚；有自定义配置时，请先保存备份。若自定义路由仍引用被移除的 ShadowTLS，迁移会停止并提示调整。
+现有配置通过新内核校验后才会替换内核；不兼容时终止更新。更新过程中临时保存旧内核、配置与服务定义；文件替换、服务配置或重启失败时自动恢复，并恢复更新前的运行状态。恢复失败时会保留恢复文件并打印路径。更新成功后删除临时备份；这不能替代长期备份，也不覆盖断电或 `SIGKILL`。客户端导出失败时保留已经正常运行的新版本，可从菜单 7 重试。
 
 </details>
 
@@ -188,3 +190,4 @@ Alpine 日志每小时检查一次，超过 1 MiB 时轮转，保留 3 份压缩
   基于 <a href="https://github.com/SagerNet/sing-box">SagerNet/sing-box</a> 官方内核 · 独立部署与管理脚本<br>
   <a href="sing-box.sh">查看源码</a> &nbsp;·&nbsp; <a href="https://github.com/passeway/sing-box/issues">问题反馈</a>
 </p>
+
