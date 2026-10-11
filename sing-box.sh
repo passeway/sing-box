@@ -391,14 +391,17 @@ commit_update() (
                 restart_service || failed=true
             fi
             if "$failed"; then
-                touch "$stage/KEEP"
                 fail "自动恢复未完全成功，恢复文件保留在 $backup；请检查服务状态"
-            else fail "更新失败，已恢复原内核、配置和服务状态"; fi
+            else
+                rm -f "$stage/KEEP"
+                fail "更新失败，已恢复原内核、配置和服务状态"
+            fi
         fi
         return "$result"
     }
     trap rollback_update EXIT
     trap 'exit 1' INT TERM HUP
+    touch "$stage/KEEP" || return 1
     dirty=true
     write_file "$CONFIG_FILE" 600 < "$stage/config.json" || return 1
     chown root:root "$extracted" && mv -f "$extracted" "$BINARY" || return 1
@@ -406,6 +409,7 @@ commit_update() (
     configure_service || return 1
     restart_attempted=true
     restart_service || return 1
+    rm -f "$stage/KEEP" || return 1
     dirty=false
 )
 install_or_update() (
