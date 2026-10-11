@@ -1,7 +1,4 @@
-import contextlib
-import copy
 import importlib.util
-import io
 import json
 import os
 from pathlib import Path
@@ -94,21 +91,6 @@ class ManagerTests(unittest.TestCase):
             with patch.object(NS['secrets'],'randbelow',side_effect=[busy-30000,22001,22001,22002]):
                 first=NS['choose_port'](used); second=NS['choose_port'](used)
             self.assertEqual((first,second),(52001,52002))
-    def test_migration_preserves_credentials_and_removes_shadowtls(self):
-        c={'log':{'output':'stdout'},'inbounds':[
-            {'type':'shadowtls','tag':'shadow','listen_port':41000,'detour':'shadowsocks-in'},
-            {'type':'shadowsocks','tag':'shadowsocks-in','listen':'127.0.0.1','listen_port':41001,'password':'unchanged'},
-            {'type':'anytls','tag':'anytls-in','listen_port':41002,'users':[{'password':'reused-public-key'}]}]}
-        migrated=NS['migrate'](copy.deepcopy(c))
-        self.assertEqual([x['type'] for x in migrated['inbounds']],['shadowsocks','anytls','snell'])
-        self.assertEqual(migrated['inbounds'][0]['password'],'unchanged')
-        self.assertNotIn(migrated['inbounds'][0]['listen'],['127.0.0.1','::1'])
-        self.assertEqual(migrated['inbounds'][1]['users'],c['inbounds'][2]['users'])
-        again=NS['migrate'](copy.deepcopy(migrated))
-        self.assertEqual(again,migrated)
-    def test_migration_rejects_dangling_routes(self):
-        c={'inbounds':[{'type':'shadowtls','tag':'shadow'}],'route':{'rules':[{'inbound':['shadow'],'outbound':'direct'}]}}
-        with self.assertRaises(ValueError): NS['migrate'](c)
     def test_client_export_uses_actual_values(self):
         c={'inbounds':[{'type':'hysteria2','listen_port':40123,'tag':'hy','users':[{'password':'secret'}]},
                        {'type':'shadowsocks','listen_port':40456,'tag':'ss','method':'2022-blake3-aes-128-gcm','password':'test'},
@@ -193,16 +175,6 @@ class ManagerTests(unittest.TestCase):
             else:
                 raw=uri.username+'='*(-len(uri.username)%4)
                 self.assertEqual(base64.urlsafe_b64decode(raw).decode(),method+':'+password)
-    def test_only_legacy_anytls_password_is_rotated(self):
-        c={'inbounds':[{'type':'vless','tls':{'reality':{'private_key':'fixture'}}},
-           {'type':'anytls','users':[{'password':'public-key'},{'password':'independent'}]},
-           {'type':'snell'}]}
-        with patch.dict(NS,{'public_key':lambda _: 'public-key'}),contextlib.redirect_stderr(io.StringIO()) as output:
-            migrated=NS['migrate'](copy.deepcopy(c))
-            self.assertNotEqual(migrated['inbounds'][1]['users'][0]['password'],'public-key')
-            self.assertEqual(migrated['inbounds'][1]['users'][1]['password'],'independent')
-            self.assertEqual(NS['migrate'](copy.deepcopy(migrated)),migrated)
-        self.assertIn('重新导入',output.getvalue())
     def transaction(self, failure='', running=True, status=1):
         stage=self.root/'stage';stage.mkdir()
         (stage/'config.json').write_text('new config')
@@ -245,6 +217,27 @@ mv() { if [ "${@: -1}" = "$BINARY" ] && [ -f "$CONFIG_DIR/fail-once" ]; then rm 
         self.transaction('configure_service() { return 1; }; mv() { case "$1 $2" in *.rollback.*) return 1;; esac; command mv "$@"; }')
         self.assertTrue((self.root/'stage/KEEP').exists())
         self.assertEqual((self.root/'stage/rollback/0').read_text(),'old config')
+    def test_update_preserves_configuration_bytes(self):
+        import tarfile
+        original='// user comment\n{"inbounds":[],"outbounds":[{"type":"direct"}]}\n'
+        (self.root/'config.json').write_text(original)
+        core=self.root/'fixture-core'
+        core.write_text('#!/bin/sh\nexit 0\n');core.chmod(0o755)
+        with tarfile.open(self.root/'fixture.tar.gz','w:gz') as archive:
+            archive.add(core,arcname='sing-box-1.14.3-linux-amd64/sing-box')
+        self.shell(r'''install_dependencies() { :; }
+get_architecture() { echo amd64; }
+latest_release_version() { echo 1.14.3; }
+curl() { cp "$CONFIG_DIR/fixture.tar.gz" "${@: -1}"; }
+managed_service_files() { :; }
+is_running() { return 1; }
+service_enabled() { return 1; }
+configure_service() { :; }
+restart_service() { :; }
+refresh_clients() { :; }
+install_or_update update''')
+        self.assertEqual((self.root/'config.json').read_text(),original)
+        self.assertFalse(list(self.root.glob('.sing-box-install.*')))
     def test_success_commits_pair(self):
         self.transaction(status=0)
         self.assertEqual((self.root/'config.json').read_text(),'new config')
@@ -267,13 +260,6 @@ class CoreTests(unittest.TestCase):
         self.assertNotEqual(anytls['users'][0]['password'],self.config['inbounds'][0]['users'][0]['password'])
         self.assertGreaterEqual(len(anytls['users'][0]['password']),43)
         self.assertEqual(len({x['listen_port'] for x in self.config['inbounds']}),5)
-    def test_real_migrated_config(self):
-        c=copy.deepcopy(self.config);c['inbounds']=[x for x in c['inbounds'] if x['type']!='snell']
-        c['inbounds'][3]['listen']='127.0.0.1'
-        c['inbounds'].append({'type':'shadowtls','detour':'shadowsocks-in','listen_port':29000})
-        NS['write'](self.root/'migrated.json',NS['migrate'](c))
-        subprocess.run([CORE,'check','-c',str(self.root/'migrated.json')],check=True,capture_output=True)
-
 if __name__=='__main__':unittest.main()
 
 

@@ -142,34 +142,6 @@ def make_config(directory, binary):
     ss=inbound('shadowsocks','shadowsocks-in'); ss.update(method='2022-blake3-aes-128-gcm',password=base64.b64encode(secrets.token_bytes(16)).decode(),multiplex={'enabled':True})
     snell=inbound('snell','snell-in'); snell.update(version=6,psk=secrets.token_urlsafe(36),mode='default')
     return {'log':{'level':'warn','timestamp':True},'inbounds':[hy,vl,anytls,ss,snell],'outbounds':[{'type':'direct','tag':'direct'}]}
-def migrate(config):
-    inbounds=config.get('inbounds',[])
-    removed={x.get('tag') for x in inbounds if x['type']=='shadowtls'}-{None}
-    config['inbounds']=[x for x in inbounds if x['type']!='shadowtls']
-    # Refuse dangling custom routing rather than silently changing its intent.
-    for rule in config.get('route',{}).get('rules',[]):
-        refs=rule.get('inbound',[]); refs=[refs] if isinstance(refs,str) else refs
-        if removed.intersection(refs): raise ValueError('Custom route references removed ShadowTLS; adjust it first')
-    for x in config['inbounds']:
-        if x.get('tag')=='shadowsocks-in' and x['type']=='shadowsocks':
-            if x.get('listen') in ('127.0.0.1','::1'): x['listen']=listen_address()
-    if not any(x['type']=='snell' for x in config['inbounds']):
-        tags={x.get('tag') for x in config['inbounds']}
-        if 'snell-in' in tags: raise ValueError('snell-in tag already used by another inbound')
-        used={x['listen_port'] for x in config['inbounds'] if 'listen_port' in x}
-        config['inbounds'].append({'type':'snell','tag':'snell-in','listen':listen_address(),'listen_port':choose_port(used),'version':6,'psk':secrets.token_urlsafe(36),'mode':'default'})
-    # Only rotate the legacy public-key password; preserve independent user passwords.
-    public_keys={public_key(x['tls']['reality']['private_key']) for x in config['inbounds']
-                 if x.get('tls',{}).get('reality',{}).get('private_key')}
-    for x in config['inbounds']:
-        if x['type']=='anytls':
-            for user in x.get('users',[]):
-                if user.get('password') in public_keys:
-                    user['password']=secrets.token_urlsafe(32)
-                    print('旧 AnyTLS 密码复用了 Reality 公钥，更新成功后请重新导入 AnyTLS 节点。',file=sys.stderr)
-    if config.get('log',{}).get('output')=='stdout': config['log'].pop('output')
-    return config
-
 def export(config,meta):
     host=str(ipaddress.ip_address(meta['address'])); authority='['+host+']' if ':' in host else host
     name=str(meta.get('name','Proxy'))
@@ -210,7 +182,6 @@ def export(config,meta):
 try:
     action=sys.argv[1]
     if action=='new': write(sys.argv[2],make_config(sys.argv[3],sys.argv[4]))
-    elif action=='migrate': write(sys.argv[3],migrate(read(sys.argv[2])))
     elif action=='clients':
         content=export(read(sys.argv[2]),read(sys.argv[3]))
         with open(sys.argv[4],'w') as f: f.write(content)
@@ -429,11 +400,10 @@ install_or_update() (
     chmod 755 "$extracted" && "$extracted" version || return 1
     if [ "$operation" = update ]; then
         [ -f "$CONFIG_FILE" ] || { fail "没有现有配置，请先安装"; return 1; }
-        # sing-box itself accepts JSONC; normalize it with the new core before Python reads it.
-        "$extracted" format -c "$CONFIG_FILE" > "$stage/current.json" || return 1
-        config_tool migrate "$stage/current.json" "$stage/config.json" || return 1
+        # Preserve the exact configuration, including JSONC comments and credentials.
+        cp "$CONFIG_FILE" "$stage/config.json" || return 1
     else
-        if [ -f "$CONFIG_FILE" ]; then fail "已有配置，请使用菜单 8 更新/迁移"; return 1; fi
+        if [ -f "$CONFIG_FILE" ]; then fail "已有配置，请使用菜单 8 更新内核"; return 1; fi
         openssl ecparam -genkey -name prime256v1 -out "$stage/key.pem" &&
             openssl req -new -x509 -days 3650 -key "$stage/key.pem" -out "$stage/cert.pem" -subj /CN=www.bing.com || return 1
         write_file "$CONFIG_DIR/key.pem" 600 < "$stage/key.pem" && write_file "$CONFIG_DIR/cert.pem" 644 < "$stage/cert.pem" || return 1
@@ -511,7 +481,7 @@ main() {
     trap 'exit 0' HUP TERM
     while show_menu; do
         case "$choice" in
-            1) if is_installed; then echo '已安装，请选择 8 更新/迁移'; else install_or_update install; fi;;
+            1) if is_installed; then echo '已安装，请选择 8 更新内核'; else install_or_update install; fi;;
             2) uninstall_service;;
             3) if is_running; then service_action stop; else restart_service; fi;;
             4) restart_service;;
