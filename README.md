@@ -217,15 +217,6 @@ On Alpine, logs are checked hourly and rotated above 1 MiB, keeping 3 compressed
 
 When opening an [issue](https://github.com/passeway/sing-box/issues), include the OS and architecture, core and client versions, steps to reproduce and relevant logs. Hide passwords, PSKs, private keys and full node links.
 
-## More guides
-
-These standalone references are not used by the installer:
-
-| Guide | Topic |
-| :--- | :--- |
-| [warp.md](warp.md) | Install and use Cloudflare WARP |
-| [config.json](config.json) | Example server configuration with placeholder credentials |
-
 ## Testing
 
 [CI](https://github.com/passeway/sing-box/actions/workflows/check.yml) runs on AMD64 and ARM64 in Debian 12/13, Ubuntu 24.04 and Alpine 3.22 containers, using the official core for each architecture:
