@@ -49,7 +49,7 @@ class ManagerTests(unittest.TestCase):
     def test_release_lookup_failure_preserves_installation(self):
         for name in ('sing-box','config.json'):(self.root/name).write_text('original')
         r=self.shell('install_dependencies() { :; }; curl() { return 22; }; install_or_update update',status=1)
-        self.assertNotIn('安装/更新成功',r.stdout)
+        self.assertNotIn('🎉',r.stdout)
         for name in ('sing-box','config.json'):self.assertEqual((self.root/name).read_text(),'original')
         self.assertFalse(list(self.root.glob('.sing-box-install.*')))
     def test_invalid_release_json_fails(self):

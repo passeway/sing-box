@@ -70,6 +70,14 @@ fetch_text() {{ return 1; }}
             time.sleep(0.5)
         self.fail(message)
 
+    def wait_for_quietly(self, probe, seconds):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if probe():
+                return True
+            time.sleep(0.5)
+        return False
+
     def systemd_property(self, name):
         return subprocess.run(['systemctl', 'show', 'sing-box', '-p', name, '--value'],
                               capture_output=True, text=True, timeout=10).stdout.strip()
@@ -140,8 +148,21 @@ fetch_text() {{ return 1; }}
             # A port stolen while the service is stopped: the supervisor may keep
             # reporting "started" while respawning, so the restart must still fail.
             self.shell('service_action stop')
-            with socket.socket(socket.AF_INET6 if self.shadowsocks()['listen'] == '::' else socket.AF_INET) as occupied:
-                occupied.bind((self.shadowsocks()['listen'], self.shadowsocks()['listen_port'])); occupied.listen()
+            inbound = self.shadowsocks()
+            with socket.socket(socket.AF_INET6 if inbound['listen'] == '::' else socket.AF_INET) as occupied:
+                # Earlier traffic leaves TIME_WAIT connections on the port; they must not block the bind.
+                # SO_REUSEADDR still refuses a port another socket is listening on.
+                occupied.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                def bound():
+                    try:
+                        occupied.bind((inbound['listen'], inbound['listen_port']))
+                        return True
+                    except OSError:
+                        return False
+                if not bound() and not self.wait_for_quietly(bound, 10):
+                    sockets = subprocess.run(['ss', '-tanp'], capture_output=True, text=True).stdout
+                    self.fail(f'port {inbound["listen_port"]} still busy after stopping the service:\n{sockets}')
+                occupied.listen()
                 failed = self.shell('restart_service', expected=1)
                 self.assertIn('服务未保持运行', failed.stderr)
                 # The core keeps failing; the manager must give up instead of restarting forever.
