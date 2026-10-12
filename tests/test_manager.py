@@ -49,7 +49,7 @@ class ManagerTests(unittest.TestCase):
     def test_release_lookup_failure_preserves_installation(self):
         for name in ('sing-box','config.json'):(self.root/name).write_text('original')
         r=self.shell('install_dependencies() { :; }; curl() { return 22; }; install_or_update update',status=1)
-        self.assertNotIn('安装/更新成功',r.stdout)
+        self.assertNotIn('🎉',r.stdout)
         for name in ('sing-box','config.json'):self.assertEqual((self.root/name).read_text(),'original')
         self.assertFalse(list(self.root.glob('.sing-box-install.*')))
     def test_invalid_release_json_fails(self):
@@ -238,6 +238,79 @@ refresh_clients() { :; }
 install_or_update update''')
         self.assertEqual((self.root/'config.json').read_text(),original)
         self.assertFalse(list(self.root.glob('.sing-box-install.*')))
+    def test_firewall_ports_follow_each_protocol(self):
+        c={'inbounds':[{'type':'hysteria2','listen_port':40001},{'type':'vless','listen_port':40002},
+                       {'type':'anytls','listen_port':40003},{'type':'shadowsocks','listen_port':40004},
+                       {'type':'snell','listen_port':40005},{'type':'shadowsocks','listen_port':40006,'network':'udp'},
+                       {'type':'direct','tag':'no-port'}]}
+        self.assertEqual(NS['firewall_ports'](c),'TCP 端口 40002/40003/40004/40005，UDP 端口 40001/40004/40006')
+        self.assertEqual(NS['firewall_ports']({'inbounds':[{'type':'vless','listen_port':443}]}),'TCP 端口 443')
+        self.assertEqual(NS['firewall_ports']({'inbounds':[]}),'')
+    def test_hidden_options_are_invalid_until_installed(self):
+        stubs=('id() { echo 0; }; get_system_type() { echo debian; }; clear() { :; }; is_running() { return 1; }; '
+               'install_or_update() { echo SHOULD_NOT_RUN; }; service_action() { echo SHOULD_NOT_RUN; }; '
+               'restart_service() { echo SHOULD_NOT_RUN; }; show_logs() { echo SHOULD_NOT_RUN; }; refresh_clients() { echo SHOULD_NOT_RUN; }; ')
+        r=self.shell(stubs+'is_installed() { return 1; }; main','3\n\n4\n\n5\n\n6\n\n7\n\n8\n\n0\n')
+        self.assertNotIn('SHOULD_NOT_RUN',r.stdout)
+        self.assertEqual(r.stdout.count('无效选项'),6)
+        r=self.shell(stubs+'is_installed() { :; }; main','8\n\n0\n')
+        self.assertIn('SHOULD_NOT_RUN',r.stdout)
+    def test_update_without_configuration_fails_before_download(self):
+        r=self.shell('install_dependencies() { echo SHOULD_NOT_RUN; }; curl() { echo SHOULD_NOT_RUN; }; install_or_update update',status=1)
+        self.assertNotIn('SHOULD_NOT_RUN',r.stdout)
+        self.assertIn('请先通过菜单 1 安装',r.stderr)
+    def test_uninstall_without_installation_cleans_residue(self):
+        (self.root/'leftover').write_text('x')
+        stubs=('get_system_type() { echo debian; }; is_running() { return 1; }; systemd_running() { return 1; }; '
+               'dpkg-query() { return 1; }; systemctl() { echo "systemctl $*" >&2; return 1; }; ')
+        r=self.shell(stubs+'uninstall_service','y\n')
+        self.assertIn('sing-box 卸载成功',r.stdout)  # the configuration directory existed
+        self.assertFalse(self.root.exists())
+        r=self.shell(stubs+'uninstall_service','y\n')
+        self.assertIn('未发现已安装的 sing-box，残留文件已清理',r.stdout)
+        self.assertNotIn('systemctl',r.stderr)
+    def test_manual_start_resets_crash_limit(self):
+        stub='get_system_type() { echo debian; }; systemctl() { if [ "$1" = show ]; then echo "$STATE"; else echo "systemctl $*"; fi; }; '
+        r=self.shell(stub+'STATE=loaded; service_action restart; service_action start; service_action stop')
+        self.assertEqual(r.stdout.splitlines(),['systemctl reset-failed sing-box','systemctl restart sing-box',
+            'systemctl reset-failed sing-box','systemctl start sing-box','systemctl stop sing-box'])
+        r=self.shell(stub+'STATE=not-found; service_action restart')
+        self.assertEqual(r.stdout.splitlines(),['systemctl restart sing-box'])
+    def test_wait_running_requires_the_same_live_process(self):
+        common='sleep() { :; }; is_running() { :; }; '
+        self.shell(common+'service_pid() { echo $$; }; wait_running')
+        # A respawning core gets a new PID each time; the counter lives in a file because service_pid runs in $(...).
+        self.shell(common+'service_pid() { echo x >> "$CONFIG_DIR/calls"; if [ $(($(wc -l < "$CONFIG_DIR/calls") % 2)) = 1 ]; then echo $$; else echo $PPID; fi; }; wait_running',status=1)
+        self.shell(common+'service_pid() { echo 999999999; }; wait_running',status=1)
+        self.shell(common+'service_pid() { echo 0; }; wait_running',status=1)
+        self.shell('sleep() { :; }; is_running() { return 1; }; service_pid() { echo $$; }; wait_running',status=1)
+    def test_install_summary_lists_ports_project_and_clients(self):
+        import tarfile
+        core=self.root/'fixture-core'
+        core.write_text('#!/bin/sh\nexit 0\n');core.chmod(0o755)
+        with tarfile.open(self.root/'fixture.tar.gz','w:gz') as archive:
+            archive.add(core,arcname='sing-box-1.14.3-linux-amd64/sing-box')
+        r=self.shell(r'''install_dependencies() { :; }
+get_architecture() { echo amd64; }
+latest_release_version() { echo 1.14.3; }
+curl() { cp "$CONFIG_DIR/fixture.tar.gz" "${@: -1}"; }
+config_tool() { echo '{}' > "$2"; }
+configure_service() { :; }
+restart_service() { echo SERVICE_LOG; }
+refresh_clients() { printf 'CLIENT-A\nCLIENT-B\n'; }
+firewall_ports() { echo 'TCP 端口 40002，UDP 端口 40001'; }
+install_or_update install''')
+        self.assertEqual(r.stdout.splitlines()[-4:],['',
+            '🎉sing-box 安装成功，请在云安全组和系统防火墙中放行 TCP 端口 40002，UDP 端口 40001，项目地址: https://github.com/passeway/sing-box',
+            'CLIENT-A','CLIENT-B'])
+        r=self.shell(r'''install_dependencies() { :; }
+get_architecture() { echo amd64; }
+latest_release_version() { echo 1.14.3; }
+curl() { cp "$CONFIG_DIR/fixture.tar.gz" "${@: -1}"; }
+commit_update() { :; }
+refresh_clients() { echo CLIENT-A; }
+install_or_update update''')
+        self.assertEqual(r.stdout.splitlines()[-3:],['','🎉sing-box 内核已更新至 1.14.3，项目地址: https://github.com/passeway/sing-box','CLIENT-A'])
     def test_success_commits_pair(self):
         self.transaction(status=0)
         self.assertEqual((self.root/'config.json').read_text(),'new config')

@@ -27,12 +27,46 @@ install_dependencies() {
 }
 is_installed() { command -v sing-box >/dev/null 2>&1 || [ -x "$BINARY" ]; }
 service_action() {
-    if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" "$1"
-    else systemctl "$1" "$SERVICE_NAME"; fi
+    if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" "$1"; return; fi
+    # Manual starts count toward StartLimitBurst; only automatic crash restarts should be limited.
+    case "$1" in
+        start|restart)
+            if [ "$(systemctl show "$SERVICE_NAME" -p LoadState --value 2>/dev/null)" = loaded ]; then
+                systemctl reset-failed "$SERVICE_NAME" || return 1
+            fi;;
+    esac
+    systemctl "$1" "$SERVICE_NAME"
 }
 is_running() {
     if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" status >/dev/null 2>&1
     else systemctl is-active --quiet "$SERVICE_NAME"; fi
+}
+systemd_running() { [ -d /run/systemd/system ]; }
+service_pid() {
+    local helper
+    if [ "$(get_system_type)" = alpine ]; then
+        for helper in /usr/libexec/rc/bin/service_get_value /lib/rc/bin/service_get_value /usr/lib/rc/bin/service_get_value; do
+            [ -x "$helper" ] && { RC_SVCNAME="$SERVICE_NAME" "$helper" child_pid; return; }
+        done
+        return 1
+    fi
+    systemctl show "$SERVICE_NAME" -p MainPID --value
+}
+# The supervisor can report "started" while respawning a crashing core, so require
+# the same live core process for three consecutive seconds.
+wait_running() {
+    local attempt stable=0 pid previous=""
+    for ((attempt=0; attempt<8; attempt++)); do
+        sleep 1
+        if is_running && pid=$(service_pid) && [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ -d "/proc/$pid" ]; then
+            if [ "$pid" = "$previous" ]; then stable=$((stable+1)); else stable=1; fi
+            previous=$pid
+        else
+            stable=0; previous=""
+        fi
+        [ "$stable" -ge 3 ] && return 0
+    done
+    return 1
 }
 write_file() (
     local target="$1" mode="$2" temporary
@@ -73,7 +107,7 @@ prepare_metadata() {
     [ -s "$META_FILE" ] && return 0
     local address country
     address=$(get_public_ip) || return 1
-    country=$(fetch_text "https://ipinfo.io/$address/country" 2>/dev/null) || country=Snell
+    country=$(fetch_text "https://ipinfo.io/$address/country" 2>/dev/null) || country=Proxy
     country=${country//$'\r'/}; country=${country//$'\n'/}
     [[ "$country" =~ ^[A-Z]{2}$ ]] || country=Proxy
     printf '{"address":"%s","name":"%s"}\n' "$address" "$country" | write_file "$META_FILE" 600
@@ -179,9 +213,20 @@ def export(config,meta):
             continue  # Snell v6 entry is exported for Surge, not assumed supported by Mihomo.
         proxies.append(p)
     return '# Clash / Mihomo: JSON is also valid YAML\n'+json.dumps({'proxies':proxies},ensure_ascii=False,indent=2)+'\n\n# Surge\n'+'\n'.join(surge)+'\n\n# Share links\n'+'\n'.join(links)+'\n'
+def firewall_ports(config):
+    networks={'tcp':set(),'udp':set()}
+    for x in config.get('inbounds',[]):
+        port=x.get('listen_port')
+        if not isinstance(port,int) or isinstance(port,bool) or not port: continue
+        if x.get('type') in ('hysteria','hysteria2','tuic'): used=['udp']
+        elif x.get('type')=='shadowsocks': used=[x['network']] if x.get('network') in networks else ['tcp','udp']
+        else: used=['tcp']
+        for network in used: networks[network].add(port)
+    return '，'.join(f'{network.upper()} 端口 '+'/'.join(map(str,sorted(ports))) for network,ports in networks.items() if ports)
 try:
     action=sys.argv[1]
     if action=='new': write(sys.argv[2],make_config(sys.argv[3],sys.argv[4]))
+    elif action=='ports': print(firewall_ports(read(sys.argv[2])))
     elif action=='clients':
         content=export(read(sys.argv[2]),read(sys.argv[3]))
         with open(sys.argv[4],'w') as f: f.write(content)
@@ -247,6 +292,8 @@ EOF
 Description=sing-box proxy service
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 [Service]
 ExecStart=$BINARY run -c $CONFIG_FILE
 Restart=on-failure
@@ -262,21 +309,25 @@ EOF
 validate_config() { "$BINARY" check -c "$CONFIG_FILE"; }
 restart_service() {
     validate_config || { fail "配置检查失败，未重启服务"; return 1; }
-    service_action restart || return 1
-    sleep 3
-    is_running || { show_logs; fail "服务未保持运行"; return 1; }
+    service_action restart && wait_running || { show_logs; fail "服务未保持运行"; return 1; }
 }
+# Run config_tool on the JSONC configuration after the core normalizes it to plain JSON.
+normalized_config_tool() (
+    local action="$1" normalized
+    shift
+    normalized=$(mktemp "$CONFIG_DIR/.normalized.XXXXXX") || return 1
+    trap 'rm -f "$normalized"' EXIT
+    "$BINARY" format -c "$CONFIG_FILE" > "$normalized" || return 1
+    config_tool "$action" "$normalized" "$@"
+)
+firewall_ports() { normalized_config_tool ports; }
 refresh_clients() (
     local temporary
     [ -f "$CONFIG_FILE" ] || { fail "服务端配置不存在"; return 1; }
     prepare_metadata || { fail "客户端地址未设置，可从菜单 7 重试"; return 1; }
     temporary=$(mktemp "$CONFIG_DIR/.clients.XXXXXX") || return 1
     trap 'rm -f "$temporary"' EXIT
-    local normalized
-    normalized=$(mktemp "$CONFIG_DIR/.normalized.XXXXXX") || return 1
-    trap 'rm -f "$temporary" "$normalized"' EXIT
-    "$BINARY" format -c "$CONFIG_FILE" > "$normalized" || return 1
-    config_tool clients "$normalized" "$META_FILE" "$temporary" &&
+    normalized_config_tool clients "$META_FILE" "$temporary" &&
         chown root:root "$temporary" && chmod 600 "$temporary" && mv -f "$temporary" "$CLIENT_CONFIG_FILE" || return 1
     cat "$CLIENT_CONFIG_FILE"
 )
@@ -384,7 +435,8 @@ commit_update() (
     dirty=false
 )
 install_or_update() (
-    local operation="${1:-install}" architecture stage extracted release_version
+    local operation="${1:-install}" architecture stage extracted release_version clients ports
+    if [ "$operation" = update ] && [ ! -f "$CONFIG_FILE" ]; then fail "没有现有配置，请先通过菜单 1 安装"; return 1; fi
     architecture=$(get_architecture) || return 1
     install_dependencies || return 1
     mkdir -p "$CONFIG_DIR" "$(dirname "$BINARY")" || return 1
@@ -399,7 +451,6 @@ install_or_update() (
     extracted="$stage/sing-box-${release_version}-linux-${architecture}/sing-box"
     chmod 755 "$extracted" && "$extracted" version || return 1
     if [ "$operation" = update ]; then
-        [ -f "$CONFIG_FILE" ] || { fail "没有现有配置，请先安装"; return 1; }
         # Preserve the exact configuration, including JSONC comments and credentials.
         cp "$CONFIG_FILE" "$stage/config.json" || return 1
     else
@@ -421,28 +472,44 @@ install_or_update() (
     for private in "$CONFIG_DIR/key.pem" "$CLIENT_CONFIG_FILE" "$META_FILE"; do
         if [ -f "$private" ]; then chown root:root "$private" && chmod 600 "$private" || return 1; fi
     done
-    refresh_clients || { fail "服务已启动，但客户端配置生成失败，可从菜单 7 重试"; return 1; }
-    echo "sing-box 安装/更新成功"
+    clients=$(refresh_clients) || { fail "服务已启动，但客户端配置生成失败，可从菜单 7 重试"; return 1; }
+    echo ""
+    if [ "$operation" = update ]; then
+        echo "🎉sing-box 内核已更新至 ${release_version}，项目地址: https://github.com/passeway/sing-box"
+    else
+        ports=$(firewall_ports) || ports=""
+        echo "🎉sing-box 安装成功${ports:+，请在云安全组和系统防火墙中放行 ${ports}}，项目地址: https://github.com/passeway/sing-box"
+    fi
+    printf '%s\n' "$clients"
 )
 uninstall_service() {
     local answer
     read -r -p '确定卸载 sing-box 并删除配置？[y/N]: ' answer || return 0
     case "$answer" in y|Y) ;; *) echo "已取消"; return 0;; esac
-    if is_running; then service_action stop || return 1; fi
+    local found=false path
+    for path in "$BINARY" "$CONFIG_DIR" /etc/init.d/sing-box /etc/systemd/system/sing-box.service; do
+        if [ -e "$path" ] || [ -L "$path" ]; then found=true; fi
+    done
+    if is_running; then found=true; service_action stop || return 1; fi
     if [ "$(get_system_type)" = alpine ]; then
-        rc-update del sing-box default || return 1
+        if [ -e /etc/runlevels/default/sing-box ]; then rc-update del sing-box default || return 1; fi
         # Remove a previously package-installed copy too, so it cannot reappear after reboot.
-        if apk info -e sing-box >/dev/null 2>&1; then apk del sing-box || return 1; fi
-        rm -f /etc/init.d/sing-box /etc/periodic/hourly/sing-box-logrotate /var/lib/logrotate/sing-box.status || return 1
+        if apk info -e sing-box >/dev/null 2>&1; then found=true; apk del sing-box || return 1; fi
+        rm -f /etc/init.d/sing-box /etc/periodic/hourly/sing-box-logrotate /var/lib/logrotate/sing-box.status \
+            /var/log/sing-box.log /var/log/sing-box.log.* || return 1
     else
-        systemctl disable sing-box || return 1
+        if [ -f /etc/systemd/system/sing-box.service ]; then systemctl disable sing-box || return 1; fi
         if dpkg-query -W -f='${Status}' sing-box 2>/dev/null | grep -q 'install ok installed'; then
-            apt-get purge -y sing-box || return 1
+            found=true; apt-get purge -y sing-box || return 1
         fi
-        rm -f /etc/systemd/system/sing-box.service && systemctl daemon-reload || return 1
+        rm -f /etc/systemd/system/sing-box.service || return 1
+        if systemd_running; then
+            systemctl daemon-reload || return 1
+            systemctl reset-failed sing-box 2>/dev/null || true
+        fi
     fi
     rm -f "$BINARY" && rm -rf "$CONFIG_DIR" || return 1
-    echo "sing-box 卸载成功"
+    if "$found"; then echo "sing-box 卸载成功"; else echo "未发现已安装的 sing-box，残留文件已清理"; fi
 }
 show_menu() {
     local installed=false running=false version='—' version_output core="$BINARY"
@@ -480,6 +547,8 @@ main() {
     trap 'exit 130' INT
     trap 'exit 0' HUP TERM
     while show_menu; do
+        # Options 3-8 are hidden until installation; treat them as invalid like the menu shows.
+        if ! is_installed; then case "$choice" in [3-8]) choice=hidden;; esac; fi
         case "$choice" in
             1) if is_installed; then echo '已安装，请选择 8 更新内核'; else install_or_update install; fi;;
             2) uninstall_service;;
