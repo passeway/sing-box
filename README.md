@@ -219,13 +219,11 @@ When opening an [issue](https://github.com/passeway/sing-box/issues), include th
 
 ## More guides
 
-These standalone notes (in Chinese) are not used by the installer:
+These standalone references are not used by the installer:
 
 | Guide | Topic |
 | :--- | :--- |
-| [bbr.md](bbr.md) | Enable TCP BBR congestion control |
 | [warp.md](warp.md) | Install and use Cloudflare WARP |
-| [tun2socks.md](tun2socks.md) | Set up tun2socks as a systemd service |
 | [config.json](config.json) | Example server configuration with placeholder credentials |
 
 ## Testing
