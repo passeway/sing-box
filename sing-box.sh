@@ -333,11 +333,19 @@ refresh_clients() (
     cat "$CLIENT_CONFIG_FILE"
 )
 latest_release_version() {
-    local architecture="$1" metadata="$2"
-    curl -fsSL --retry 2 --connect-timeout 10 --max-time 30 \
-        https://api.github.com/repos/SagerNet/sing-box/releases/latest -o "$metadata" || {
-        fail "无法获取最新稳定版信息，未替换现有内核和配置" >&2; return 1;
-    }
+    local architecture="$1" metadata="$2" location tag
+    if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 30 \
+        https://api.github.com/repos/SagerNet/sing-box/releases/latest -o "$metadata"; then
+        # The API allows 60 unauthenticated requests per hour per IP (shared by NAT and CI hosts);
+        # the release page redirect is not rate-limited and never points to a pre-release.
+        location=$(curl -fsS -o /dev/null -w '%{redirect_url}' --retry 2 --connect-timeout 10 --max-time 30 \
+            https://github.com/SagerNet/sing-box/releases/latest) || location=""
+        tag=${location##*/}
+        if [[ "$location" == https://github.com/SagerNet/sing-box/releases/tag/* && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf '%s\n' "${tag#v}"; return 0
+        fi
+        fail "无法获取最新稳定版信息，未替换现有内核和配置"; return 1
+    fi
     python3 - "$metadata" "$architecture" <<'PYRELEASE'
 import json, re, sys
 try:

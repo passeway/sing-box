@@ -52,6 +52,13 @@ class ManagerTests(unittest.TestCase):
         self.assertNotIn('🎉',r.stdout)
         for name in ('sing-box','config.json'):self.assertEqual((self.root/name).read_text(),'original')
         self.assertFalse(list(self.root.glob('.sing-box-install.*')))
+    def test_rate_limited_api_falls_back_to_release_redirect(self):
+        stub='curl() { case "$*" in *api.github.com*) return 22;; esac; printf %s "$LOCATION"; }; '
+        r=self.shell(stub+'LOCATION=https://github.com/SagerNet/sing-box/releases/tag/v1.15.2; latest_release_version amd64 "$CONFIG_DIR/release.json"')
+        self.assertEqual(r.stdout.strip(),'1.15.2')
+        for location in ('https://github.com/SagerNet/sing-box/releases/tag/v1.16.0-beta.1',
+                         'https://github.com/SagerNet/sing-box/releases/tag/../../x', 'https://example.com/releases/tag/v1.15.2', ''):
+            self.shell(stub+f'LOCATION="{location}"; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
     def test_invalid_release_json_fails(self):
         self.shell('curl() { printf broken > "${@: -1}"; }; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
     def test_architectures(self):
