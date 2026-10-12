@@ -6,6 +6,7 @@ CLIENT_CONFIG_FILE="$CONFIG_DIR/client.txt"
 META_FILE="$CONFIG_DIR/client-meta.json"
 BINARY="/usr/local/bin/sing-box"
 SERVICE_NAME="sing-box"
+SYSTEMD_UNIT="/etc/systemd/system/sing-box.service"
 
 fail() { printf '错误：%s\n' "$*" >&2; return 1; }
 get_system_type() {
@@ -19,7 +20,7 @@ get_architecture() {
 install_dependencies() {
     case "$(get_system_type)" in
         debian|ubuntu)
-            apt-get update && apt-get -o DPkg::Lock::Timeout=120 install -y curl ca-certificates tar gzip openssl python3 iproute2 || return 1;;
+            apt-get -o DPkg::Lock::Timeout=120 update && apt-get -o DPkg::Lock::Timeout=120 install -y curl ca-certificates tar gzip openssl python3 iproute2 || return 1;;
         alpine)
             apk add --no-cache bash curl ca-certificates tar gzip openssl python3 iproute2 openrc busybox-openrc logrotate gcompat libstdc++ || return 1;;
         *) fail "仅支持 Debian、Ubuntu、Alpine"; return 1;;
@@ -287,7 +288,7 @@ EOF
         rc-update add crond default && rc-update add sing-box default || return 1
         rc-service crond status >/dev/null 2>&1 || rc-service crond start || return 1
     else
-        write_file /etc/systemd/system/sing-box.service 644 <<EOF || return 1
+        write_file "$SYSTEMD_UNIT" 644 <<EOF || return 1
 [Unit]
 Description=sing-box proxy service
 After=network-online.target
@@ -363,7 +364,7 @@ PYRELEASE
 managed_service_files() {
     if [ "$(get_system_type)" = alpine ]; then
         printf '%s\n' /etc/init.d/sing-box /etc/periodic/hourly/sing-box-logrotate
-    else printf '%s\n' /etc/systemd/system/sing-box.service; fi
+    else printf '%s\n' "$SYSTEMD_UNIT"; fi
 }
 service_enabled() {
     if [ "$(get_system_type)" = alpine ]; then [ -e /etc/runlevels/default/sing-box ]
@@ -429,14 +430,19 @@ commit_update() (
     chown root:root "$extracted" && mv -f "$extracted" "$BINARY" || return 1
     service_touched=true
     configure_service || return 1
-    restart_attempted=true
-    restart_service || return 1
+    # The new core already validated the configuration; keep a stopped service stopped.
+    if "$was_running"; then
+        restart_attempted=true
+        restart_service || return 1
+    fi
     rm -f "$stage/KEEP" || return 1
     dirty=false
 )
 install_or_update() (
     local operation="${1:-install}" architecture stage extracted release_version clients ports
     if [ "$operation" = update ] && [ ! -f "$CONFIG_FILE" ]; then fail "没有现有配置，请先通过菜单 1 安装"; return 1; fi
+    # Menu 1 only runs without a core, so an existing configuration is a leftover of an incomplete installation.
+    if [ "$operation" = install ] && [ -f "$CONFIG_FILE" ]; then fail "检测到残留配置，请先通过菜单 2 清理后重新安装"; return 1; fi
     architecture=$(get_architecture) || return 1
     install_dependencies || return 1
     mkdir -p "$CONFIG_DIR" "$(dirname "$BINARY")" || return 1
@@ -454,7 +460,6 @@ install_or_update() (
         # Preserve the exact configuration, including JSONC comments and credentials.
         cp "$CONFIG_FILE" "$stage/config.json" || return 1
     else
-        if [ -f "$CONFIG_FILE" ]; then fail "已有配置，请使用菜单 8 更新内核"; return 1; fi
         openssl ecparam -genkey -name prime256v1 -out "$stage/key.pem" &&
             openssl req -new -x509 -days 3650 -key "$stage/key.pem" -out "$stage/cert.pem" -subj /CN=www.bing.com || return 1
         write_file "$CONFIG_DIR/key.pem" 600 < "$stage/key.pem" && write_file "$CONFIG_DIR/cert.pem" 644 < "$stage/cert.pem" || return 1
@@ -476,6 +481,7 @@ install_or_update() (
     echo ""
     if [ "$operation" = update ]; then
         echo "🎉sing-box 内核已更新至 ${release_version}，项目地址: https://github.com/passeway/sing-box"
+        is_running || echo "服务未运行，可通过菜单 3 启动"
     else
         ports=$(firewall_ports) || ports=""
         echo "🎉sing-box 安装成功${ports:+，请在云安全组和系统防火墙中放行 ${ports}}，项目地址: https://github.com/passeway/sing-box"
@@ -487,10 +493,14 @@ uninstall_service() {
     read -r -p '确定卸载 sing-box 并删除配置？[y/N]: ' answer || return 0
     case "$answer" in y|Y) ;; *) echo "已取消"; return 0;; esac
     local found=false path
-    for path in "$BINARY" "$CONFIG_DIR" /etc/init.d/sing-box /etc/systemd/system/sing-box.service; do
+    for path in "$BINARY" "$CONFIG_DIR" /etc/init.d/sing-box "$SYSTEMD_UNIT"; do
         if [ -e "$path" ] || [ -L "$path" ]; then found=true; fi
     done
-    if is_running; then found=true; service_action stop || return 1; fi
+    # A crashing systemd unit waiting to restart is not "active" but must still be stopped.
+    local stop=false
+    if is_running; then found=true; stop=true; fi
+    if [ -f /etc/init.d/sing-box ] || { [ -f "$SYSTEMD_UNIT" ] && systemd_running; }; then stop=true; fi
+    if "$stop"; then service_action stop || return 1; fi
     if [ "$(get_system_type)" = alpine ]; then
         if [ -e /etc/runlevels/default/sing-box ]; then rc-update del sing-box default || return 1; fi
         # Remove a previously package-installed copy too, so it cannot reappear after reboot.
@@ -498,11 +508,11 @@ uninstall_service() {
         rm -f /etc/init.d/sing-box /etc/periodic/hourly/sing-box-logrotate /var/lib/logrotate/sing-box.status \
             /var/log/sing-box.log /var/log/sing-box.log.* || return 1
     else
-        if [ -f /etc/systemd/system/sing-box.service ]; then systemctl disable sing-box || return 1; fi
+        if [ -f "$SYSTEMD_UNIT" ]; then systemctl disable sing-box || return 1; fi
         if dpkg-query -W -f='${Status}' sing-box 2>/dev/null | grep -q 'install ok installed'; then
             found=true; apt-get purge -y sing-box || return 1
         fi
-        rm -f /etc/systemd/system/sing-box.service || return 1
+        rm -f "$SYSTEMD_UNIT" || return 1
         if systemd_running; then
             systemctl daemon-reload || return 1
             systemctl reset-failed sing-box 2>/dev/null || true
