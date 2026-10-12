@@ -221,9 +221,7 @@ Alpine 的日志每小时检查一次，超过 1 MiB 时轮转，保留 3 份压
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [bbr.md](bbr.md) | 开启 TCP BBR 拥塞控制 |
 | [warp.md](warp.md) | 安装和使用 Cloudflare WARP |
-| [tun2socks.md](tun2socks.md) | 将 tun2socks 配置为 systemd 服务 |
 | [config.json](config.json) | 服务端配置示例（凭据为占位符） |
 
 ## 测试
