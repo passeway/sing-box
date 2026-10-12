@@ -15,7 +15,7 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
         image: [debian:bookworm-slim, debian:trixie-slim, ubuntu:24.04, alpine:3.22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download the same official core used by the installer
         run: |
           source ./sing-box.sh

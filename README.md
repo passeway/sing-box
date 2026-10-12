@@ -127,7 +127,7 @@ After editing the server configuration, restart with **4** and export with **7**
 
 ## Core updates
 
-Menu **8** replaces the core and refreshes the service definition. Configuration, ports and credentials are kept; protocols are never added, removed or migrated.
+Menu **8** replaces the core and refreshes the service definition. Configuration, ports and credentials are kept; protocols are never added, removed or migrated. A running service is restarted on the new core; a stopped one stays stopped.
 
 - **Checked before replacing**: the update stops if the release cannot be resolved, the package is missing, or your configuration fails the new core's check.
 - **Rolled back on failure**: if replacing files, writing the service or restarting fails, the previous core, configuration, service definition and running state are restored. If restoring also fails, the recovery files are kept and their path is printed.

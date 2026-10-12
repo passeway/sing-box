@@ -52,6 +52,13 @@ class ManagerTests(unittest.TestCase):
         self.assertNotIn('🎉',r.stdout)
         for name in ('sing-box','config.json'):self.assertEqual((self.root/name).read_text(),'original')
         self.assertFalse(list(self.root.glob('.sing-box-install.*')))
+    def test_rate_limited_api_falls_back_to_release_redirect(self):
+        stub='curl() { case "$*" in *api.github.com*) return 22;; esac; printf %s "$LOCATION"; }; '
+        r=self.shell(stub+'LOCATION=https://github.com/SagerNet/sing-box/releases/tag/v1.15.2; latest_release_version amd64 "$CONFIG_DIR/release.json"')
+        self.assertEqual(r.stdout.strip(),'1.15.2')
+        for location in ('https://github.com/SagerNet/sing-box/releases/tag/v1.16.0-beta.1',
+                         'https://github.com/SagerNet/sing-box/releases/tag/../../x', 'https://example.com/releases/tag/v1.15.2', ''):
+            self.shell(stub+f'LOCATION="{location}"; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
     def test_invalid_release_json_fails(self):
         self.shell('curl() { printf broken > "${@: -1}"; }; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
     def test_architectures(self):
@@ -210,8 +217,12 @@ mv() { if [ "${@: -1}" = "$BINARY" ] && [ -f "$CONFIG_DIR/fail-once" ]; then rm 
     def test_restart_failure_restores_running_service(self):
         self.transaction(r'''restart_service() { if [ "$(cat "$BINARY")" = 'new binary' ]; then echo stopped > "$CONFIG_DIR/state"; return 1; fi; echo running > "$CONFIG_DIR/state"; }''')
         self.assert_restored(True)
-    def test_restart_failure_preserves_stopped_state(self):
-        self.transaction('restart_service() { echo running > "$CONFIG_DIR/state"; return 1; }',running=False)
+    def test_update_keeps_a_stopped_service_stopped(self):
+        self.transaction('restart_service() { echo SHOULD_NOT_RUN; echo running > "$CONFIG_DIR/state"; }',running=False,status=0)
+        self.assertEqual((self.root/'state').read_text().strip(),'stopped')
+        self.assertEqual((self.root/'sing-box').read_text(),'new binary')
+    def test_rollback_after_late_failure_preserves_stopped_state(self):
+        self.transaction('rm() { case "$*" in *KEEP*) return 1;; esac; command rm "$@"; }',running=False)
         self.assert_restored(False)
     def test_rollback_failure_keeps_recovery_files(self):
         self.transaction('configure_service() { return 1; }; mv() { case "$1 $2" in *.rollback.*) return 1;; esac; command mv "$@"; }')
@@ -255,6 +266,22 @@ install_or_update update''')
         self.assertEqual(r.stdout.count('无效选项'),6)
         r=self.shell(stubs+'is_installed() { :; }; main','8\n\n0\n')
         self.assertIn('SHOULD_NOT_RUN',r.stdout)
+    def test_leftover_configuration_blocks_install_before_download(self):
+        (self.root/'config.json').write_text('{}')
+        r=self.shell('install_dependencies() { echo SHOULD_NOT_RUN; }; curl() { echo SHOULD_NOT_RUN; }; install_or_update install',status=1)
+        self.assertNotIn('SHOULD_NOT_RUN',r.stdout)
+        self.assertIn('请先通过菜单 2 清理后重新安装',r.stderr)
+    def test_uninstall_stops_a_unit_between_crash_restarts(self):
+        stubs=(f'SYSTEMD_UNIT="{self.root}/unit"; get_system_type() {{ echo debian; }}; is_running() {{ return 1; }}; systemd_running() {{ :; }}; '
+               'dpkg-query() { return 1; }; systemctl() { echo "systemctl $*"; }; service_action() { echo "STOP $1"; }; ')
+        # Without a unit file there is nothing to stop.
+        r=self.shell(stubs+'uninstall_service','y\n')
+        self.assertNotIn('STOP',r.stdout)
+        self.root.mkdir(); (self.root/'unit').write_text('[Service]\n')
+        r=self.shell(stubs+'uninstall_service','y\n')
+        self.assertIn('STOP stop',r.stdout)
+        self.assertIn('systemctl disable sing-box',r.stdout)
+        self.assertIn('sing-box 卸载成功',r.stdout)
     def test_update_without_configuration_fails_before_download(self):
         r=self.shell('install_dependencies() { echo SHOULD_NOT_RUN; }; curl() { echo SHOULD_NOT_RUN; }; install_or_update update',status=1)
         self.assertNotIn('SHOULD_NOT_RUN',r.stdout)
@@ -303,14 +330,19 @@ install_or_update install''')
         self.assertEqual(r.stdout.splitlines()[-4:],['',
             '🎉sing-box 安装成功，请在云安全组和系统防火墙中放行 TCP 端口 40002，UDP 端口 40001，项目地址: https://github.com/passeway/sing-box',
             'CLIENT-A','CLIENT-B'])
-        r=self.shell(r'''install_dependencies() { :; }
+        update=r'''install_dependencies() { :; }
 get_architecture() { echo amd64; }
 latest_release_version() { echo 1.14.3; }
 curl() { cp "$CONFIG_DIR/fixture.tar.gz" "${@: -1}"; }
 commit_update() { :; }
 refresh_clients() { echo CLIENT-A; }
-install_or_update update''')
-        self.assertEqual(r.stdout.splitlines()[-3:],['','🎉sing-box 内核已更新至 1.14.3，项目地址: https://github.com/passeway/sing-box','CLIENT-A'])
+is_running() { [ "$STATE" = running ]; }
+'''
+        updated='🎉sing-box 内核已更新至 1.14.3，项目地址: https://github.com/passeway/sing-box'
+        r=self.shell(update+'STATE=running; install_or_update update')
+        self.assertEqual(r.stdout.splitlines()[-3:],['',updated,'CLIENT-A'])
+        r=self.shell(update+'STATE=stopped; install_or_update update')
+        self.assertEqual(r.stdout.splitlines()[-4:],['',updated,'服务未运行，可通过菜单 3 启动','CLIENT-A'])
     def test_success_commits_pair(self):
         self.transaction(status=0)
         self.assertEqual((self.root/'config.json').read_text(),'new config')

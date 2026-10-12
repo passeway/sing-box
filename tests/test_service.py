@@ -207,6 +207,13 @@ fetch_text() {{ return 1; }}
                 self.assertEqual(self.systemd_property('UnitFileState'), 'enabled')
             self.assert_traffic()
 
+            # Updating a stopped service keeps it stopped.
+            self.shell('service_action stop')
+            stopped = self.shell('install_or_update update')
+            self.assertIn('服务未运行，可通过菜单 3 启动', stopped.stdout)
+            self.assertNotEqual(self.probe('is_running').returncode, 0)
+            self.assertEqual(CONFIG.read_bytes(), configuration)
+
             uninstalled = self.shell('uninstall_service', 'y\n')
             self.assertIn('sing-box 卸载成功', uninstalled.stdout)
             for path in ('/usr/local/bin/sing-box', '/etc/sing-box', '/etc/init.d/sing-box',
