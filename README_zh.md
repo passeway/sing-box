@@ -215,15 +215,6 @@ Alpine 的日志每小时检查一次，超过 1 MiB 时轮转，保留 3 份压
 
 提交 [Issue](https://github.com/passeway/sing-box/issues) 时，请附上系统与架构、内核与客户端版本、复现步骤和相关日志，并隐藏密码、PSK、私钥及完整节点链接。
 
-## 其他教程
-
-以下是独立的参考文档，安装脚本不会用到：
-
-| 文档 | 内容 |
-| :--- | :--- |
-| [warp.md](warp.md) | 安装和使用 Cloudflare WARP |
-| [config.json](config.json) | 服务端配置示例（凭据为占位符） |
-
 ## 测试
 
 [持续集成](https://github.com/passeway/sing-box/actions/workflows/check.yml) 在 AMD64 和 ARM64 的 Debian 12/13、Ubuntu 24.04、Alpine 3.22 容器中运行，使用对应架构的官方内核：
