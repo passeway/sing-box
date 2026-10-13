@@ -20,17 +20,6 @@ It deploys Hysteria2, VLESS Reality, AnyTLS, Shadowsocks 2022 and Snell v6 at on
 
 ---
 
-## Highlights
-
-- **Official core only.** The latest stable release comes straight from SagerNet/sing-box. Pre-releases are rejected, and the package must match your CPU architecture.
-- **Five protocols in one install.** Random free ports (checked on TCP, UDP and IPv6), independent credentials, a self-signed certificate and a Reality key pair.
-- **Nodes ready to import.** Mihomo (Clash Meta), Surge and share links for v2rayN and similar clients, named by region, such as `HK-vless-in`.
-- **Tells you what to open.** The install result lists the exact TCP and UDP ports for your firewall.
-- **Recovers from crashes.** systemd or OpenRC restarts a crashed core after 3 seconds, and gives up after 5 failures in 60 seconds instead of looping forever.
-- **Safe core updates.** The new core checks your configuration before anything is replaced; a failed update rolls everything back.
-
-> The management menu is in Simplified Chinese.
-
 ## Quick start
 
 | Requirement | |
@@ -72,6 +61,17 @@ bash <(curl -fsSL https://raw.githubusercontent.com/passeway/sing-box/main/sing-
 ```
 
 </details>
+
+## Highlights
+
+- **Official core only.** The latest stable release comes straight from SagerNet/sing-box. Pre-releases are rejected, and the package must match your CPU architecture.
+- **Five protocols in one install.** Random free ports (checked on TCP, UDP and IPv6), independent credentials, a self-signed certificate and a Reality key pair.
+- **Nodes ready to import.** Mihomo (Clash Meta), Surge and share links for v2rayN and similar clients, named by region, such as `HK-vless-in`.
+- **Tells you what to open.** The install result lists the exact TCP and UDP ports for your firewall.
+- **Recovers from crashes.** systemd or OpenRC restarts a crashed core after 3 seconds, and gives up after 5 failures in 60 seconds instead of looping forever.
+- **Safe core updates.** The new core checks your configuration before anything is replaced; a failed update rolls everything back.
+
+> The management menu is in Simplified Chinese.
 
 ## Protocols
 
