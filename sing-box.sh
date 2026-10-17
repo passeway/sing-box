@@ -29,7 +29,6 @@ install_dependencies() {
 is_installed() { command -v sing-box >/dev/null 2>&1 || [ -x "$BINARY" ]; }
 service_action() {
     if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" "$1"; return; fi
-    # Manual starts count toward StartLimitBurst; only automatic crash restarts should be limited.
     case "$1" in
         start|restart)
             if [ "$(systemctl show "$SERVICE_NAME" -p LoadState --value 2>/dev/null)" = loaded ]; then
@@ -53,15 +52,14 @@ service_pid() {
     fi
     systemctl show "$SERVICE_NAME" -p MainPID --value
 }
-# The supervisor can report "started" while respawning a crashing core, so require
-# the same live core process for three consecutive seconds.
 wait_running() {
-    local attempt stable=0 pid previous=""
+    local attempt stable=0 pid previous="" delay
     for ((attempt=0; attempt<8; attempt++)); do
-        sleep 1
+        case $attempt in 0) delay=0.5;; 1) delay=1;; *) delay=2;; esac
+        sleep "$delay"
         if is_running && pid=$(service_pid) && [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ -d "/proc/$pid" ]; then
             if [ "$pid" = "$previous" ]; then stable=$((stable+1)); else stable=1; fi
-            previous=$pid
+            previous="$pid"
         else
             stable=0; previous=""
         fi
@@ -97,7 +95,7 @@ get_public_ip() {
         if valid_address "$address"; then printf '%s\n' "$address"; return; fi
     done
     echo "无法自动获取公网 IP。" >&2
-    while read -r -p '请输入公网 IPv4/IPv6（留空取消）: ' address; do
+    while read -r -t 30 -p '请输入公网 IPv4/IPv6（留空取消）: ' address; do
         [ -n "$address" ] || return 1
         if valid_address "$address"; then printf '%s\n' "$address"; return; fi
         echo "IP 地址无效。" >&2
@@ -114,7 +112,6 @@ prepare_metadata() {
     printf '{"address":"%s","name":"%s"}\n' "$address" "$country" | write_file "$META_FILE" 600
 }
 
-# JSON generation and export use a parser, not string substitutions of secrets.
 config_tool() {
     python3 - "$@" <<'PY'
 import base64, errno, ipaddress, json, os, re, secrets, socket, subprocess, sys, uuid
@@ -132,7 +129,6 @@ def public_key(private):
     result=subprocess.run(['openssl','pkey','-inform','DER','-pubout','-outform','DER'],input=der,capture_output=True,check=True)
     return base64.urlsafe_b64encode(result.stdout[-32:]).decode().rstrip('=')
 def choose_port(used):
-    # Probe TCP and UDP, including IPv6 where available; reserve all selected values in this batch.
     for _ in range(200):
         port=secrets.randbelow(35000)+30000
         if port in used: continue
@@ -147,8 +143,6 @@ def choose_port(used):
                         if family==socket.AF_INET6: s.setsockopt(socket.IPPROTO_IPV6,socket.IPV6_V6ONLY,1)
                         s.bind((host,port))
                     except OSError as error:
-                        # IPv6 may be compiled in but disabled by the host. A busy
-                        # IPv6 port must still reject this candidate on dual-stack hosts.
                         if family==socket.AF_INET6 and error.errno in (
                             errno.EAFNOSUPPORT, errno.EPROTONOSUPPORT, errno.EADDRNOTAVAIL,
                             errno.ENODEV):
@@ -211,7 +205,7 @@ def export(config,meta):
             links.append(f'ss://{userinfo}@{authority}:{port}#{quote(label)}')
         else:
             surge.append(f'{label} = snell, {host}, {port}, psk={x["psk"]}, version={x["version"]}, mode={x.get("mode","default")}, reuse=true')
-            continue  # Snell v6 entry is exported for Surge, not assumed supported by Mihomo.
+            continue
         proxies.append(p)
     return '# Clash / Mihomo: JSON is also valid YAML\n'+json.dumps({'proxies':proxies},ensure_ascii=False,indent=2)+'\n\n# Surge\n'+'\n'.join(surge)+'\n\n# Share links\n'+'\n'.join(links)+'\n'
 def firewall_ports(config):
@@ -234,7 +228,6 @@ try:
         os.chmod(sys.argv[4],0o600)
     else: raise ValueError('Unknown operation')
 except Exception as error:
-    # Do not include configuration values or secrets in error messages.
     print('Configuration operation failed ('+type(error).__name__+'); check configuration structure and dependencies.',file=sys.stderr)
     sys.exit(1)
 PY
@@ -312,7 +305,6 @@ restart_service() {
     validate_config || { fail "配置检查失败，未重启服务"; return 1; }
     service_action restart && wait_running || { show_logs; fail "服务未保持运行"; return 1; }
 }
-# Run config_tool on the JSONC configuration after the core normalizes it to plain JSON.
 normalized_config_tool() (
     local action="$1" normalized
     shift
@@ -334,16 +326,14 @@ refresh_clients() (
 )
 latest_release_version() {
     local architecture="$1" metadata="$2" location tag
+    location=$(curl -fsS -o /dev/null -w '%{redirect_url}' --retry 2 --connect-timeout 10 --max-time 30 \
+        https://github.com/SagerNet/sing-box/releases/latest) || location=""
+    tag=${location##*/}
+    if [[ "$location" == https://github.com/SagerNet/sing-box/releases/tag/* && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        printf '%s\n' "${tag#v}"; return 0
+    fi
     if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 30 \
         https://api.github.com/repos/SagerNet/sing-box/releases/latest -o "$metadata"; then
-        # The API allows 60 unauthenticated requests per hour per IP (shared by NAT and CI hosts);
-        # the release page redirect is not rate-limited and never points to a pre-release.
-        location=$(curl -fsS -o /dev/null -w '%{redirect_url}' --retry 2 --connect-timeout 10 --max-time 30 \
-            https://github.com/SagerNet/sing-box/releases/latest) || location=""
-        tag=${location##*/}
-        if [[ "$location" == https://github.com/SagerNet/sing-box/releases/tag/* && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            printf '%s\n' "${tag#v}"; return 0
-        fi
         fail "无法获取最新稳定版信息，未替换现有内核和配置"; return 1
     fi
     python3 - "$metadata" "$architecture" <<'PYRELEASE'
@@ -368,7 +358,6 @@ except (OSError, ValueError, TypeError, AttributeError) as error:
     sys.exit(1)
 PYRELEASE
 }
-# Snapshot the files an update may replace. Keep recovery data if restoration fails.
 managed_service_files() {
     if [ "$(get_system_type)" = alpine ]; then
         printf '%s\n' /etc/init.d/sing-box /etc/periodic/hourly/sing-box-logrotate
@@ -438,7 +427,6 @@ commit_update() (
     chown root:root "$extracted" && mv -f "$extracted" "$BINARY" || return 1
     service_touched=true
     configure_service || return 1
-    # The new core already validated the configuration; keep a stopped service stopped.
     if "$was_running"; then
         restart_attempted=true
         restart_service || return 1
@@ -449,7 +437,6 @@ commit_update() (
 install_or_update() (
     local operation="${1:-install}" architecture stage extracted release_version clients ports
     if [ "$operation" = update ] && [ ! -f "$CONFIG_FILE" ]; then fail "没有现有配置，请先通过菜单 1 安装"; return 1; fi
-    # Menu 1 only runs without a core, so an existing configuration is a leftover of an incomplete installation.
     if [ "$operation" = install ] && [ -f "$CONFIG_FILE" ]; then fail "检测到残留配置，请先通过菜单 2 清理后重新安装"; return 1; fi
     architecture=$(get_architecture) || return 1
     install_dependencies || return 1
@@ -465,7 +452,6 @@ install_or_update() (
     extracted="$stage/sing-box-${release_version}-linux-${architecture}/sing-box"
     chmod 755 "$extracted" && "$extracted" version || return 1
     if [ "$operation" = update ]; then
-        # Preserve the exact configuration, including JSONC comments and credentials.
         cp "$CONFIG_FILE" "$stage/config.json" || return 1
     else
         openssl ecparam -genkey -name prime256v1 -out "$stage/key.pem" &&
@@ -504,14 +490,12 @@ uninstall_service() {
     for path in "$BINARY" "$CONFIG_DIR" /etc/init.d/sing-box "$SYSTEMD_UNIT"; do
         if [ -e "$path" ] || [ -L "$path" ]; then found=true; fi
     done
-    # A crashing systemd unit waiting to restart is not "active" but must still be stopped.
     local stop=false
     if is_running; then found=true; stop=true; fi
     if [ -f /etc/init.d/sing-box ] || { [ -f "$SYSTEMD_UNIT" ] && systemd_running; }; then stop=true; fi
     if "$stop"; then service_action stop || return 1; fi
     if [ "$(get_system_type)" = alpine ]; then
         if [ -e /etc/runlevels/default/sing-box ]; then rc-update del sing-box default || return 1; fi
-        # Remove a previously package-installed copy too, so it cannot reappear after reboot.
         if apk info -e sing-box >/dev/null 2>&1; then found=true; apk del sing-box || return 1; fi
         rm -f /etc/init.d/sing-box /etc/periodic/hourly/sing-box-logrotate /var/lib/logrotate/sing-box.status \
             /var/log/sing-box.log /var/log/sing-box.log.* || return 1
@@ -565,7 +549,6 @@ main() {
     trap 'exit 130' INT
     trap 'exit 0' HUP TERM
     while show_menu; do
-        # Options 3-8 are hidden until installation; treat them as invalid like the menu shows.
         if ! is_installed; then case "$choice" in [3-8]) choice=hidden;; esac; fi
         case "$choice" in
             1) if is_installed; then echo '已安装，请选择 8 更新内核'; else install_or_update install; fi;;
@@ -584,5 +567,3 @@ main() {
     return 0
 }
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
-
-
