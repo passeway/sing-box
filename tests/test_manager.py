@@ -35,8 +35,11 @@ class ManagerTests(unittest.TestCase):
                 'assets':[{'name':name,'browser_download_url':f'https://github.com/SagerNet/sing-box/releases/download/v{version}/{name}'}]}
     def resolve_release(self, release, architecture='amd64', status=0):
         (self.root/'fixture.json').write_text(json.dumps(release))
-        return self.shell('curl() { cp "$CONFIG_DIR/fixture.json" "${@: -1}"; }; '
-                          f'latest_release_version {architecture} "$CONFIG_DIR/release.json"',status=status)
+        # The redirect fast-path passes a URL as the last argument; the API fallback
+        # passes a file path.  Route each accordingly so the stub never writes to a URL.
+        stub=('curl() { if [[ "${@: -1}" == http* ]]; then printf "%s" "${LOCATION:-}"; '
+              'else cp "$CONFIG_DIR/fixture.json" "${@: -1}"; fi; }; ')
+        return self.shell(stub+f'latest_release_version {architecture} "$CONFIG_DIR/release.json"',status=status)
     def test_latest_release_is_dynamic_for_both_architectures(self):
         for architecture in ('amd64','arm64'):
             self.assertEqual(self.resolve_release(self.release_fixture('1.15.0',architecture),architecture).stdout.strip(),'1.15.0')
@@ -52,7 +55,7 @@ class ManagerTests(unittest.TestCase):
         self.assertNotIn('🎉',r.stdout)
         for name in ('sing-box','config.json'):self.assertEqual((self.root/name).read_text(),'original')
         self.assertFalse(list(self.root.glob('.sing-box-install.*')))
-    def test_rate_limited_api_falls_back_to_release_redirect(self):
+    def test_redirect_fast_path_beats_rate_limited_api(self):
         stub='curl() { case "$*" in *api.github.com*) return 22;; esac; printf %s "$LOCATION"; }; '
         r=self.shell(stub+'LOCATION=https://github.com/SagerNet/sing-box/releases/tag/v1.15.2; latest_release_version amd64 "$CONFIG_DIR/release.json"')
         self.assertEqual(r.stdout.strip(),'1.15.2')
@@ -60,7 +63,8 @@ class ManagerTests(unittest.TestCase):
                          'https://github.com/SagerNet/sing-box/releases/tag/../../x', 'https://example.com/releases/tag/v1.15.2', ''):
             self.shell(stub+f'LOCATION="{location}"; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
     def test_invalid_release_json_fails(self):
-        self.shell('curl() { printf broken > "${@: -1}"; }; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
+        stub='curl() { if [[ "${@: -1}" == http* ]]; then printf "%s" ""; else printf broken > "${@: -1}"; fi; }; '
+        self.shell(stub+'latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
     def test_architectures(self):
         for arch,want in [('x86_64','amd64'),('aarch64','arm64')]:
             self.assertEqual(self.shell(f'uname() {{ echo {arch}; }}; get_architecture').stdout.strip(),want)
