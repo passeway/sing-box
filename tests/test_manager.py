@@ -262,7 +262,7 @@ install_or_update update''')
                        {'type':'direct','tag':'no-port'}]}
         self.assertEqual(NS['firewall_ports'](c),'TCP 端口 40002/40003/40004/40005，UDP 端口 40001/40004/40006')
         self.assertEqual(NS['firewall_ports']({'inbounds':[{'type':'vless','listen_port':443}]}),'TCP 端口 443')
-        self.assertEqual(NS['firewall_ports']({'inbounds':[]})),'')
+        self.assertEqual(NS['firewall_ports']({'inbounds':[]}),'')
     def test_hidden_options_are_invalid_until_installed(self):
         stubs=('id() { echo 0; }; get_system_type() { echo debian; }; clear() { :; }; is_running() { return 1; }; '
                'install_or_update() { echo SHOULD_NOT_RUN; }; service_action() { echo SHOULD_NOT_RUN; }; '
