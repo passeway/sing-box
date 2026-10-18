@@ -56,7 +56,9 @@ class ManagerTests(unittest.TestCase):
         for name in ('sing-box','config.json'):self.assertEqual((self.root/name).read_text(),'original')
         self.assertFalse(list(self.root.glob('.sing-box-install.*')))
     def test_redirect_fast_path_beats_rate_limited_api(self):
-        stub='curl() { case "$*" in *api.github.com*) return 22;; esac; printf %s "$LOCATION"; }; '
+        # The asset HEAD probe uses a releases/download URL; answer it with a
+        # synthetic 200 so the redirect fast-path is accepted in one round trip.
+        stub='curl() { case "$*" in *api.github.com*) return 22;; *releases/download*) printf "HTTP/2.0 200 OK";; *) printf %s "$LOCATION"; esac; }; '
         r=self.shell(stub+'LOCATION=https://github.com/SagerNet/sing-box/releases/tag/v1.15.2; latest_release_version amd64 "$CONFIG_DIR/release.json"')
         self.assertEqual(r.stdout.strip(),'1.15.2')
         for location in ('https://github.com/SagerNet/sing-box/releases/tag/v1.16.0-beta.1',
@@ -260,7 +262,7 @@ install_or_update update''')
                        {'type':'direct','tag':'no-port'}]}
         self.assertEqual(NS['firewall_ports'](c),'TCP 端口 40002/40003/40004/40005，UDP 端口 40001/40004/40006')
         self.assertEqual(NS['firewall_ports']({'inbounds':[{'type':'vless','listen_port':443}]}),'TCP 端口 443')
-        self.assertEqual(NS['firewall_ports']({'inbounds':[]}),'')
+        self.assertEqual(NS['firewall_ports']({'inbounds':[]})),'')
     def test_hidden_options_are_invalid_until_installed(self):
         stubs=('id() { echo 0; }; get_system_type() { echo debian; }; clear() { :; }; is_running() { return 1; }; '
                'install_or_update() { echo SHOULD_NOT_RUN; }; service_action() { echo SHOULD_NOT_RUN; }; '
@@ -370,5 +372,3 @@ class CoreTests(unittest.TestCase):
         self.assertGreaterEqual(len(anytls['users'][0]['password']),43)
         self.assertEqual(len({x['listen_port'] for x in self.config['inbounds']}),5)
 if __name__=='__main__':unittest.main()
-
-
