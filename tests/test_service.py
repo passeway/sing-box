@@ -51,7 +51,7 @@ curl() {{ cp "{self.fixture}" "${{@: -1}}"; }}
 get_public_ip() {{ echo 203.0.113.1; }}
 fetch_text() {{ return 1; }}
 '''
-        result = subprocess.run(['bash', '-c', setup + command, 'service-test', str(SCRIPT)],
+        result = subprocess.run(['bash', '-c', setup + 'with_operation_lock ' + command, 'service-test', str(SCRIPT)],
                                 input=data, text=True, capture_output=True, timeout=90)
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         return result
@@ -209,7 +209,10 @@ fetch_text() {{ return 1; }}
 
             # Updating a stopped service keeps it stopped.
             self.shell('service_action stop')
+            self.shell('restore_autostart false')
+            self.assertNotEqual(self.probe('service_enabled').returncode, 0)
             stopped = self.shell('install_or_update update')
+            self.assertNotEqual(self.probe('service_enabled').returncode, 0)
             self.assertIn('服务未运行，可通过菜单 3 启动', stopped.stdout)
             self.assertNotEqual(self.probe('is_running').returncode, 0)
             self.assertEqual(CONFIG.read_bytes(), configuration)
@@ -229,3 +232,4 @@ fetch_text() {{ return 1; }}
 
 if __name__ == '__main__':
     unittest.main()
+
