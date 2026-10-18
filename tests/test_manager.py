@@ -308,6 +308,7 @@ curl() { cp "$CONFIG_DIR/fixture.tar.gz" "${@: -1}"; }
 managed_service_files() { :; }
 is_running() { return 1; }
 service_enabled() { return 1; }
+restore_autostart() { :; }
 configure_service() { :; }
 restart_service() { :; }
 refresh_clients() { :; }
