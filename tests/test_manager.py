@@ -24,7 +24,7 @@ class ManagerTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name)
         self.code=SOURCE.replace('if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi','')
-        self.prefix=f'CONFIG_DIR="{self.root}"; CONFIG_FILE="$CONFIG_DIR/config.json"; CLIENT_CONFIG_FILE="$CONFIG_DIR/client.txt"; META_FILE="$CONFIG_DIR/client-meta.json"; BINARY="$CONFIG_DIR/sing-box";\n'
+        self.prefix=f'CONFIG_DIR="{self.root}"; CONFIG_FILE="$CONFIG_DIR/config.json"; CLIENT_CONFIG_FILE="$CONFIG_DIR/client.txt"; META_FILE="$CONFIG_DIR/client-meta.json"; BINARY="$CONFIG_DIR/sing-box"; OPERATION_LOCK="$CONFIG_DIR/operation.lock";\n'
     def shell(self,code,data='',status=0):
         r=subprocess.run(['bash','-c',self.code+'\n'+self.prefix+code],input=data,text=True,capture_output=True,timeout=8)
         self.assertEqual(r.returncode,status,r.stderr+r.stdout)
@@ -57,13 +57,55 @@ class ManagerTests(unittest.TestCase):
         self.assertFalse(list(self.root.glob('.sing-box-install.*')))
     def test_redirect_fast_path_beats_rate_limited_api(self):
         # The asset HEAD probe uses a releases/download URL; answer it with a
-        # synthetic 200 so the redirect fast-path is accepted in one round trip.
-        stub='curl() { case "$*" in *api.github.com*) return 22;; *releases/download*) printf "HTTP/2.0 200 OK";; *) printf %s "$LOCATION"; esac; }; '
+        # final status code after following the asset redirect.
+        stub='curl() { case "$*" in *api.github.com*) return 22;; *releases/download*) printf "200";; *) printf %s "$LOCATION"; esac; }; '
         r=self.shell(stub+'LOCATION=https://github.com/SagerNet/sing-box/releases/tag/v1.15.2; latest_release_version amd64 "$CONFIG_DIR/release.json"')
         self.assertEqual(r.stdout.strip(),'1.15.2')
         for location in ('https://github.com/SagerNet/sing-box/releases/tag/v1.16.0-beta.1',
                          'https://github.com/SagerNet/sing-box/releases/tag/../../x', 'https://example.com/releases/tag/v1.15.2', ''):
             self.shell(stub+f'LOCATION="{location}"; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
+    def test_asset_probe_follows_redirect_and_checks_curl_status(self):
+        stub = r'''curl() {
+case "$*" in
+ *api.github.com*) return 22;;
+ *releases/download*)
+   case "$*" in *-fsSL*"%{http_code}"*) ;; *) return 2;; esac
+   printf %s "$ASSET_STATUS"; return "$ASSET_EXIT";;
+ *) printf %s https://github.com/SagerNet/sing-box/releases/tag/v1.15.2;;
+esac
+}; '''
+        result=self.shell(stub+'ASSET_STATUS=200; ASSET_EXIT=0; latest_release_version amd64 "$CONFIG_DIR/release.json"')
+        self.assertEqual(result.stdout.strip(),'1.15.2')
+        for code,exit_status in [('302',0),('404',22),('200',28),('000',7)]:
+            self.shell(stub+f'ASSET_STATUS={code}; ASSET_EXIT={exit_status}; latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
+
+    def test_operation_lock_rejects_overlap_and_recovers_after_kill(self):
+        holder=subprocess.Popen(['bash','-c',self.code+'\n'+self.prefix+
+            'hold() { echo READY; read -r ignored; }; with_operation_lock hold'],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(),'READY')
+            result=self.shell('with_operation_lock touch "$CONFIG_DIR/should-not-exist"',status=1)
+            self.assertIn('管理操作正在运行',result.stderr)
+            self.assertFalse((self.root/'should-not-exist').exists())
+            holder.kill();holder.communicate(timeout=5)
+            self.shell('with_operation_lock touch "$CONFIG_DIR/recovered"')
+            self.assertTrue((self.root/'recovered').exists())
+        finally:
+            if holder.poll() is None: holder.kill()
+            holder.communicate(timeout=5)
+
+    def test_operation_lock_releases_after_failure(self):
+        self.shell('with_operation_lock false',status=1)
+        self.shell('with_operation_lock true')
+
+    def test_service_commands_do_not_inherit_the_lock(self):
+        for system,command in [('alpine','rc-service'),('debian','systemctl')]:
+            result=self.shell(f'get_system_type() {{ echo {system}; }}; '+command+
+                '() { if ( : >&9 ) 2>/dev/null; then return 1; fi; echo CLOSED; }; '
+                'with_operation_lock service_action stop')
+            self.assertEqual(result.stdout.strip(),'CLOSED')
+
     def test_invalid_release_json_fails(self):
         stub='curl() { if [[ "${@: -1}" == http* ]]; then printf "%s" ""; else printf broken > "${@: -1}"; fi; }; '
         self.shell(stub+'latest_release_version amd64 "$CONFIG_DIR/release.json"',status=1)
@@ -227,6 +269,23 @@ mv() { if [ "${@: -1}" = "$BINARY" ] && [ -f "$CONFIG_DIR/fail-once" ]; then rm 
         self.transaction('restart_service() { echo SHOULD_NOT_RUN; echo running > "$CONFIG_DIR/state"; }',running=False,status=0)
         self.assertEqual((self.root/'state').read_text().strip(),'stopped')
         self.assertEqual((self.root/'sing-box').read_text(),'new binary')
+    def test_successful_update_preserves_disabled_autostart(self):
+        self.transaction('configure_service() { echo true > "$CONFIG_DIR/enabled"; }',running=False,status=0)
+        self.assertEqual((self.root/'enabled').read_text().strip(),'false')
+        self.assertEqual((self.root/'state').read_text().strip(),'stopped')
+
+    def test_successful_update_preserves_enabled_autostart(self):
+        self.transaction('service_enabled() { return 0; }',status=0)
+        self.assertEqual((self.root/'enabled').read_text().strip(),'true')
+
+    def test_autostart_restore_failure_rolls_back_update(self):
+        self.transaction(r'''restore_autostart() {
+ if [ "$(cat "$BINARY")" = 'new binary' ]; then return 1; fi
+ echo "$1" > "$CONFIG_DIR/enabled"
+}''')
+        self.assert_restored(True)
+        self.assertEqual((self.root/'enabled').read_text().strip(),'false')
+
     def test_rollback_after_late_failure_preserves_stopped_state(self):
         self.transaction('rm() { case "$*" in *KEEP*) return 1;; esac; command rm "$@"; }',running=False)
         self.assert_restored(False)
@@ -249,6 +308,7 @@ curl() { cp "$CONFIG_DIR/fixture.tar.gz" "${@: -1}"; }
 managed_service_files() { :; }
 is_running() { return 1; }
 service_enabled() { return 1; }
+restore_autostart() { :; }
 configure_service() { :; }
 restart_service() { :; }
 refresh_clients() { :; }
@@ -372,3 +432,4 @@ class CoreTests(unittest.TestCase):
         self.assertGreaterEqual(len(anytls['users'][0]['password']),43)
         self.assertEqual(len({x['listen_port'] for x in self.config['inbounds']}),5)
 if __name__=='__main__':unittest.main()
+

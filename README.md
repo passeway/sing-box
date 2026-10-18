@@ -144,7 +144,9 @@ The top of the menu shows install state, running state and core version. Before 
 
 ### Core updates
 
-Menu **8** replaces the core and refreshes the service definition. Configuration, ports and credentials are kept, and protocols are never added or removed. A running service is restarted on the new core; a stopped one stays stopped.
+Menu **8** replaces the core and refreshes the service definition. Configuration, ports and credentials are kept, and protocols are never added or removed. A running service is restarted on the new core; a stopped one stays stopped. The existing boot-time autostart setting is preserved.
+
+Install, update, uninstall, start/stop, restart and node export share an exclusive operation lock. A second operation exits with a retry message; the lock is released automatically when the owning process exits.
 
 - **Checked first.** The update stops if the release cannot be resolved, the package is missing, or your configuration fails the new core's check.
 - **Rolled back on failure.** If replacing files, writing the service or restarting fails, the previous core, configuration, service definition and running state come back. If even that fails, the recovery files are kept and their path is printed.
@@ -230,3 +232,4 @@ Boot-time autostart on a real VPS, Internet reachability and UDP relay still nee
 ## License
 
 An independent management script for the official [SagerNet/sing-box](https://github.com/SagerNet/sing-box) core. See [sing-box.sh](sing-box.sh) and [LICENSE](LICENSE).
+

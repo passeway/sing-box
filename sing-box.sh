@@ -7,6 +7,7 @@ META_FILE="$CONFIG_DIR/client-meta.json"
 BINARY="/usr/local/bin/sing-box"
 SERVICE_NAME="sing-box"
 SYSTEMD_UNIT="/etc/systemd/system/sing-box.service"
+OPERATION_LOCK="/run/sing-box-manager.lock"
 
 fail() { printf '错误：%s\n' "$*" >&2; return 1; }
 get_system_type() {
@@ -20,22 +21,38 @@ get_architecture() {
 install_dependencies() {
     case "$(get_system_type)" in
         debian|ubuntu)
-            apt-get -o DPkg::Lock::Timeout=120 update && apt-get -o DPkg::Lock::Timeout=120 install -y curl ca-certificates tar gzip openssl python3 iproute2 || return 1;;
+            apt-get -o DPkg::Lock::Timeout=120 update && apt-get -o DPkg::Lock::Timeout=120 install -y curl ca-certificates tar gzip openssl python3 iproute2 util-linux || return 1;;
         alpine)
-            apk add --no-cache bash curl ca-certificates tar gzip openssl python3 iproute2 openrc busybox-openrc logrotate gcompat libstdc++ || return 1;;
+            apk add --no-cache bash curl ca-certificates tar gzip openssl python3 iproute2 flock openrc busybox-openrc logrotate gcompat libstdc++ || return 1;;
         *) fail "仅支持 Debian、Ubuntu、Alpine"; return 1;;
     esac
 }
+# Keep the lock file: unlinking it would let another process lock a different inode.
+# The subshell owns descriptor 9; kernel locks disappear even after SIGKILL.
+with_operation_lock() (
+    if ! command -v flock >/dev/null 2>&1; then
+        case "$(get_system_type)" in
+            alpine) apk add --no-cache flock || return 1;;
+            debian|ubuntu) apt-get -o DPkg::Lock::Timeout=120 install -y util-linux || return 1;;
+            *) return 1;;
+        esac
+    fi
+    umask 077
+    exec 9>"$OPERATION_LOCK" || return 1
+    flock -n 9 || { fail "已有 sing-box 管理操作正在运行，请稍后重试"; return 1; }
+    "$@"
+)
+toggle_service() { if is_running; then service_action stop; else restart_service; fi; }
 is_installed() { command -v sing-box >/dev/null 2>&1 || [ -x "$BINARY" ]; }
 service_action() {
-    if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" "$1"; return; fi
+    if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" "$1" 9>&-; return; fi
     case "$1" in
         start|restart)
             if [ "$(systemctl show "$SERVICE_NAME" -p LoadState --value 2>/dev/null)" = loaded ]; then
                 systemctl reset-failed "$SERVICE_NAME" || return 1
             fi;;
     esac
-    systemctl "$1" "$SERVICE_NAME"
+    systemctl "$1" "$SERVICE_NAME" 9>&-
 }
 is_running() {
     if [ "$(get_system_type)" = alpine ]; then rc-service "$SERVICE_NAME" status >/dev/null 2>&1
@@ -279,7 +296,7 @@ EOF
 exec /usr/sbin/logrotate -s /var/lib/logrotate/sing-box.status "$CONFIG_DIR/logrotate.conf"
 EOF
         rc-update add crond default && rc-update add sing-box default || return 1
-        rc-service crond status >/dev/null 2>&1 || rc-service crond start || return 1
+        rc-service crond status >/dev/null 2>&1 || rc-service crond start 9>&- || return 1
     else
         write_file "$SYSTEMD_UNIT" 644 <<EOF || return 1
 [Unit]
@@ -325,7 +342,7 @@ refresh_clients() (
     cat "$CLIENT_CONFIG_FILE"
 )
 latest_release_version() {
-    local architecture="$1" metadata="$2" location tag asset_url
+    local architecture="$1" metadata="$2" location tag asset_url status
     # Fast path: the release page redirect is not rate-limited and resolves in <1s.
     # The regex below rejects pre-release tags such as v1.15.0-beta.1.
     location=$(curl -fsS -o /dev/null -w '%{redirect_url}' --retry 2 --connect-timeout 10 --max-time 30 \
@@ -334,7 +351,7 @@ latest_release_version() {
     if [[ "$location" == https://github.com/SagerNet/sing-box/releases/tag/* && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         # Confirm the architecture-specific asset exists before trusting the redirect.
         asset_url="https://github.com/SagerNet/sing-box/releases/download/${tag}/sing-box-${tag#v}-linux-${architecture}.tar.gz"
-        if curl -fsS --head --retry 1 --connect-timeout 5 --max-time 10 "$asset_url" 2>/dev/null | grep -q '^HTTP/.* 200'; then
+        if status=$(curl -fsSL --head -o /dev/null -w '%{http_code}' --retry 1 --connect-timeout 5 --max-time 10 "$asset_url" 2>/dev/null) && [ "$status" = 200 ]; then
             printf '%s\n' "${tag#v}"; return 0
         fi
     fi
@@ -434,6 +451,7 @@ commit_update() (
     chown root:root "$extracted" && mv -f "$extracted" "$BINARY" || return 1
     service_touched=true
     configure_service || return 1
+    restore_autostart "$was_enabled" || return 1
     if "$was_running"; then
         restart_attempted=true
         restart_service || return 1
@@ -558,14 +576,14 @@ main() {
     while show_menu; do
         if ! is_installed; then case "$choice" in [3-8]) choice=hidden;; esac; fi
         case "$choice" in
-            1) if is_installed; then echo '已安装，请选择 8 更新内核'; else install_or_update install; fi;;
-            2) uninstall_service;;
-            3) if is_running; then service_action stop; else restart_service; fi;;
-            4) restart_service;;
+            1) if is_installed; then echo '已安装，请选择 8 更新内核'; else with_operation_lock install_or_update install; fi;;
+            2) with_operation_lock uninstall_service;;
+            3) with_operation_lock toggle_service;;
+            4) with_operation_lock restart_service;;
             5) service_action status;;
             6) show_logs follow;;
-            7) refresh_clients;;
-            8) install_or_update update;;
+            7) with_operation_lock refresh_clients;;
+            8) with_operation_lock install_or_update update;;
             0) return 0;;
             *) echo '无效选项';;
         esac
@@ -574,3 +592,4 @@ main() {
     return 0
 }
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
+
