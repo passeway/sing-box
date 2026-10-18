@@ -76,7 +76,7 @@ write_file() (
         fail "写入文件失败：$target"; return 1;
     }
 )
-fetch_text() { curl -4fsS --connect-timeout 3 --max-time 8 "$1"; }
+fetch_text() { curl -fsS --connect-timeout 3 --max-time 8 "$1"; }
 valid_address() {
     python3 - "$1" <<'PY'
 import ipaddress, sys
@@ -89,7 +89,7 @@ PY
 }
 get_public_ip() {
     local url address
-    for url in https://checkip.amazonaws.com https://api.ipify.org https://ipv4.icanhazip.com; do
+    for url in https://checkip.amazonaws.com https://api.ipify.org https://ipv4.icanhazip.com https://ipv6.icanhazip.com https://api6.ipify.org; do
         address=$(fetch_text "$url" 2>/dev/null) || continue
         address=${address//$'\r'/}; address=${address//$'\n'/}
         if valid_address "$address"; then printf '%s\n' "$address"; return; fi
@@ -325,13 +325,20 @@ refresh_clients() (
     cat "$CLIENT_CONFIG_FILE"
 )
 latest_release_version() {
-    local architecture="$1" metadata="$2" location tag
+    local architecture="$1" metadata="$2" location tag asset_url
+    # Fast path: the release page redirect is not rate-limited and resolves in <1s.
+    # The regex below rejects pre-release tags such as v1.15.0-beta.1.
     location=$(curl -fsS -o /dev/null -w '%{redirect_url}' --retry 2 --connect-timeout 10 --max-time 30 \
         https://github.com/SagerNet/sing-box/releases/latest) || location=""
     tag=${location##*/}
     if [[ "$location" == https://github.com/SagerNet/sing-box/releases/tag/* && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        printf '%s\n' "${tag#v}"; return 0
+        # Confirm the architecture-specific asset exists before trusting the redirect.
+        asset_url="https://github.com/SagerNet/sing-box/releases/download/${tag}/sing-box-${tag#v}-linux-${architecture}.tar.gz"
+        if curl -fsS --head --retry 1 --connect-timeout 5 --max-time 10 "$asset_url" 2>/dev/null | grep -q '^HTTP/.* 200'; then
+            printf '%s\n' "${tag#v}"; return 0
+        fi
     fi
+    # Fallback: GitHub API (60 unauthenticated requests per hour per IP).
     if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 30 \
         https://api.github.com/repos/SagerNet/sing-box/releases/latest -o "$metadata"; then
         fail "无法获取最新稳定版信息，未替换现有内核和配置"; return 1
